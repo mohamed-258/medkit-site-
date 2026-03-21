@@ -11,6 +11,8 @@ export interface UserProfile {
   points: number;
   completedQuizzes: number;
   sectionPoints?: Record<string, number>;
+  allowedSubjects?: string[];
+  createdAt?: string;
 }
 
 export interface Subject {

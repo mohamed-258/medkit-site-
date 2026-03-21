@@ -33,9 +33,9 @@ service cloud.firestore {
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
-    function isAuthorized() {
-      return isAuthenticated() &&
-        (isAdmin() || exists(/databases/$(database)/documents/authorizedEmails/$(request.auth.token.email)));
+    function isSubjectAllowed(subjectId) {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isAdmin() || (userDoc.data.allowedSubjects != null && subjectId in userDoc.data.allowedSubjects);
     }
 
     function isValidUser(data) {
@@ -49,7 +49,8 @@ service cloud.firestore {
              (!('dateOfBirth' in data) || data.dateOfBirth is string) &&
              (!('points' in data) || data.points is number) &&
              (!('completedQuizzes' in data) || data.completedQuizzes is number) &&
-             (!('sectionPoints' in data) || data.sectionPoints is map);
+             (!('sectionPoints' in data) || data.sectionPoints is map) &&
+             (!('allowedSubjects' in data) || data.allowedSubjects is list);
     }
 
     function isValidSubject(data) {
@@ -104,7 +105,7 @@ service cloud.firestore {
     }
 
     match /subjects/{subjectId} {
-      allow read: if isAuthenticated() && (!resource.data.isLocked || isAuthorized());
+      allow read: if isAuthenticated() && (!resource.data.isLocked || isSubjectAllowed(subjectId));
       allow create, update: if isAdmin() && isValidSubject(request.resource.data);
       allow delete: if isAdmin();
     }
@@ -116,14 +117,9 @@ service cloud.firestore {
     }
 
     match /questions/{questionId} {
-      allow read: if isAuthorized();
+      allow read: if isAuthenticated() && isSubjectAllowed(resource.data.subjectId);
       allow create, update: if isAdmin() && isValidQuestion(request.resource.data);
       allow delete: if isAdmin();
-    }
-
-    match /authorizedEmails/{email} {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
     }
 
     match /quizResults/{resultId} {

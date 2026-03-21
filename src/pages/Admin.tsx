@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Subject, Section, Question } from '../types';
+import { Subject, Section, Question, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -19,11 +19,11 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'authorizedEmails'>('subjects');
+  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [authorizedEmails, setAuthorizedEmails] = useState<string[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
@@ -237,17 +237,34 @@ export default function Admin() {
       setLoading(false);
     });
 
-    const unsubEmails = onSnapshot(collection(db, 'authorizedEmails'), (snapshot) => {
-      setAuthorizedEmails(snapshot.docs.map(doc => doc.id));
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      setUsers(snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
     });
 
     return () => {
       unsubSubjects();
       unsubSections();
       unsubQuestions();
-      unsubEmails();
+      unsubUsers();
     };
   }, []);
+
+  const toggleSubjectAccess = async (user: UserProfile, subjectId: string) => {
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const allowedSubjects = user.allowedSubjects || [];
+      const isAllowed = allowedSubjects.includes(subjectId);
+
+      const newAllowedSubjects = isAllowed
+        ? allowedSubjects.filter(id => id !== subjectId)
+        : [...allowedSubjects, subjectId];
+
+      await updateDoc(userRef, { allowedSubjects: newAllowedSubjects });
+      setMessage({ text: 'Permissions updated successfully', type: 'success' });
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'users/' + user.uid);
+    }
+  };
 
   const handleFirestoreError = (error: any, operation: string, path: string) => {
     const errInfo = {
@@ -452,13 +469,13 @@ export default function Admin() {
               Questions
             </button>
             <button
-              onClick={() => setActiveTab('authorizedEmails')}
+              onClick={() => setActiveTab('users')}
               className={cn(
                 "px-6 py-2 rounded-xl font-bold text-sm transition-all",
-                activeTab === 'authorizedEmails' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
+                activeTab === 'users' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
               )}
             >
-              Authorized Emails
+              Users
             </button>
           </div>
         </div>
@@ -587,48 +604,59 @@ export default function Admin() {
             ))}
           </div>
         </section>
-      ) : activeTab === 'authorizedEmails' ? (
+      ) : activeTab === 'users' ? (
         <section>
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Authorized Emails</h2>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (!newEmail) return;
-              try {
-                await setDoc(doc(db, 'authorizedEmails', newEmail), { email: newEmail });
-                setNewEmail('');
-                setMessage({ text: 'Email authorized successfully', type: 'success' });
-              } catch (err) {
-                handleFirestoreError(err, 'create', 'authorizedEmails');
-              }
-            }} className="flex gap-2">
-              <input
-                type="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="Enter email..."
-                className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="submit"
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all"
-              >
-                <Plus size={20} />
-                Authorize
-              </button>
-            </form>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">User Permissions</h2>
+            <button
+              onClick={() => {
+                // Since onSnapshot is real-time, this is just for visual feedback.
+                // If the user feels it's not updating, this will reassure them.
+                setMessage({ text: 'Refreshing user list...', type: 'success' });
+                setTimeout(() => setMessage(null), 2000);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {authorizedEmails.map((email) => (
-              <div key={email} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between group">
-                <span className="font-bold text-slate-900 dark:text-white">{email}</span>
-                <button
-                  onClick={() => handleDelete('authorizedEmails', email)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                >
-                  <Trash2 size={20} />
-                </button>
+            {users.map((user) => (
+              <div key={user.uid} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div className="mb-4 flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-slate-900 dark:text-white">{user.displayName || user.email}</h3>
+                    <p className="text-xs text-slate-500">{user.email}</p>
+                    {user.createdAt && (
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Joined: {new Date(user.createdAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDelete('users', user.uid)}
+                    className="text-red-500 hover:text-red-700 p-2"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {subjects.map(subject => (
+                    <div key={subject.id} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-700 dark:text-slate-300">{subject.nameEn || subject.nameAr}</span>
+                      <button
+                        onClick={() => toggleSubjectAccess(user, subject.id)}
+                        className={cn(
+                          "p-2 rounded-lg transition-colors",
+                          (user.allowedSubjects || []).includes(subject.id) ? "text-blue-600 bg-blue-50 dark:bg-blue-900/20" : "text-slate-400 hover:text-slate-600"
+                        )}
+                      >
+                        {(user.allowedSubjects || []).includes(subject.id) ? <Unlock size={18} /> : <Lock size={18} />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
