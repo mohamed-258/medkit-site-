@@ -68,6 +68,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
               role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
               points: 0,
               completedQuizzes: 0,
+              createdAt: new Date().toISOString(),
             };
             setDoc(docRef, newProfile);
             setProfile(newProfile);

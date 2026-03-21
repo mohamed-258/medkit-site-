@@ -15,7 +15,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function Dashboard() {
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<UserProfile[]>([]);
@@ -37,6 +37,13 @@ export default function Dashboard() {
       setSections(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
     });
 
+    return () => {
+      unsubSubjects();
+      unsubSections();
+    };
+  }, []);
+
+  useEffect(() => {
     // Fetch leaderboard
     const leaderboardQuery = query(collection(db, 'users'), orderBy('points', 'desc'), limit(5));
     const unsubLeaderboard = onSnapshot(leaderboardQuery, (snapshot) => {
@@ -44,36 +51,31 @@ export default function Dashboard() {
     });
 
     // Fetch recent results for current user
+    let unsubResults: () => void;
     if (profile?.uid) {
       const resultsQuery = query(
         collection(db, 'quizResults'),
         orderBy('timestamp', 'desc'),
         limit(3)
       );
-      // Note: In a real app, you'd filter by userId, but for simplicity we'll just show recent ones
-      // and filter in memory if needed, or use a composite index.
-      const unsubResults = onSnapshot(resultsQuery, (snapshot) => {
+      unsubResults = onSnapshot(resultsQuery, (snapshot) => {
         setRecentResults(snapshot.docs
           .map(doc => doc.data() as QuizResult)
           .filter(r => r.userId === profile.uid)
         );
       });
-      return () => {
-        unsubSubjects();
-        unsubSections();
-        unsubLeaderboard();
-        unsubResults();
-      };
     }
-
+    
     return () => {
-      unsubSubjects();
-      unsubSections();
       unsubLeaderboard();
+      if (unsubResults) unsubResults();
     };
   }, [profile?.uid]);
 
-  const filteredSubjects = subjects.filter(s => 
+  const filteredSubjects = subjects.filter(s => {
+    if (isAdmin) return true;
+    return (profile?.allowedSubjects || []).includes(s.id);
+  }).filter(s => 
     (s.nameAr && s.nameAr.includes(searchQuery)) || (s.nameEn && s.nameEn.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
