@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../App';
 import { Subject, UserProfile, QuizResult } from '../types';
 import { motion } from 'motion/react';
-import { BookOpen, Trophy, Zap, Clock, ArrowLeft, Search, Star, GraduationCap, ChevronLeft } from 'lucide-react';
+import { BookOpen, Trophy, Zap, Clock, ArrowLeft, Search, Star, GraduationCap, ChevronLeft, Lock, Unlock } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

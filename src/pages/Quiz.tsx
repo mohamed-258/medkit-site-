@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { useAuth } from '../App';
 import { Question, Subject, QuizResult } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
