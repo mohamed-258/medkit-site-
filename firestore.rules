@@ -57,7 +57,8 @@ service cloud.firestore {
              (!('id' in data) || data.id is string) &&
              (!('nameAr' in data) || data.nameAr is string) &&
              (!('nameEn' in data) || data.nameEn is string) &&
-             (!('icon' in data) || data.icon is string);
+             (!('icon' in data) || data.icon is string) &&
+             (!('isLocked' in data) || data.isLocked is bool);
     }
 
     function isValidSection(data) {
@@ -103,7 +104,7 @@ service cloud.firestore {
     }
 
     match /subjects/{subjectId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (!resource.data.isLocked || isAuthorized());
       allow create, update: if isAdmin() && isValidSubject(request.resource.data);
       allow delete: if isAdmin();
     }

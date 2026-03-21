@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [sections, setSections] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<UserProfile[]>([]);
   const [recentResults, setRecentResults] = useState<QuizResult[]>([]);
+  const [authorizedEmails, setAuthorizedEmails] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -35,6 +36,11 @@ export default function Dashboard() {
 
     const unsubSections = onSnapshot(collection(db, 'sections'), (snapshot) => {
       setSections(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+    });
+
+    // Fetch authorized emails
+    const unsubEmails = onSnapshot(collection(db, 'authorizedEmails'), (snapshot) => {
+      setAuthorizedEmails(snapshot.docs.map(doc => doc.data().email));
     });
 
     // Fetch leaderboard
@@ -61,6 +67,7 @@ export default function Dashboard() {
       return () => {
         unsubSubjects();
         unsubSections();
+        unsubEmails();
         unsubLeaderboard();
         unsubResults();
       };
@@ -69,6 +76,7 @@ export default function Dashboard() {
     return () => {
       unsubSubjects();
       unsubSections();
+      unsubEmails();
       unsubLeaderboard();
     };
   }, [profile?.uid]);
@@ -150,28 +158,42 @@ export default function Dashboard() {
                     whileHover={{ y: -4 }}
                     className="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-blue-200 dark:hover:border-blue-900 transition-all"
                   >
-                    <Link to={`/quiz/${subject.id}`} className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          <BookOpen size={28} />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 dark:text-white text-lg">{subject.nameEn || subject.nameAr || 'Unnamed Category'}</h3>
-                          <div className="flex items-center gap-3 mt-1">
-                            <p className="text-sm text-slate-500 dark:text-slate-400">{subject.nameEn && subject.nameAr ? subject.nameAr : ''}</p>
-                            {subjectPoints > 0 && (
-                              <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-md">
-                                <Star size={12} fill="currentColor" />
-                                {subjectPoints} pts
-                              </div>
-                            )}
+                    {subject.isLocked && !authorizedEmails.includes(profile?.email || '') && profile?.role !== 'admin' ? (
+                      <div className="flex items-center justify-between opacity-50 cursor-not-allowed">
+                        <div className="flex items-center gap-4">
+                          <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400">
+                            <Lock size={28} />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-slate-900 dark:text-white text-lg">{subject.nameEn || subject.nameAr || 'Unnamed Category'}</h3>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">Locked</p>
                           </div>
                         </div>
                       </div>
-                      <div className="w-10 h-10 rounded-full border border-slate-100 dark:border-slate-800 flex items-center justify-center text-slate-400 group-hover:text-blue-600 group-hover:border-blue-200 transition-all">
-                        <ChevronLeft size={20} className="rotate-180" />
-                      </div>
-                    </Link>
+                    ) : (
+                      <Link to={`/quiz/${subject.id}`} className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            {subject.isLocked ? <Lock size={28} /> : <BookOpen size={28} />}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-slate-900 dark:text-white text-lg">{subject.nameEn || subject.nameAr || 'Unnamed Category'}</h3>
+                            <div className="flex items-center gap-3 mt-1">
+                              <p className="text-sm text-slate-500 dark:text-slate-400">{subject.nameEn && subject.nameAr ? subject.nameAr : ''}</p>
+                              {subjectPoints > 0 && (
+                                <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-md">
+                                  <Star size={12} fill="currentColor" />
+                                  {subjectPoints} pts
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full border border-slate-100 dark:border-slate-800 flex items-center justify-center text-slate-400 group-hover:text-blue-600 group-hover:border-blue-200 transition-all">
+                          <ChevronLeft size={20} className="rotate-180" />
+                        </div>
+                      </Link>
+                    )}
                   </motion.div>
                 )})}
               </div>

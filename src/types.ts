@@ -18,6 +18,7 @@ export interface Subject {
   nameAr?: string;
   nameEn?: string;
   icon: string;
+  isLocked?: boolean;
 }
 
 export interface Section {

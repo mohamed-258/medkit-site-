@@ -3,7 +3,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where
 import { db, auth } from '../firebase';
 import { Subject, Section, Question } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -336,6 +336,15 @@ export default function Admin() {
     }
   };
 
+  const toggleLock = async (subject: Subject) => {
+    try {
+      await updateDoc(doc(db, 'subjects', subject.id), { isLocked: !subject.isLocked });
+      setMessage({ text: `Subject ${!subject.isLocked ? 'locked' : 'unlocked'} successfully`, type: 'success' });
+    } catch (err) {
+      handleFirestoreError(err, 'update', 'subjects');
+    }
+  };
+
   const handleBulkDelete = async () => {
     if (selectedQuestionIds.size === 0) return;
     if (!confirm(`Are you sure you want to delete ${selectedQuestionIds.size} questions?`)) return;
@@ -520,12 +529,23 @@ export default function Admin() {
                     <p className="text-xs text-slate-500">{subject.nameAr}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDelete('subjects', subject.id)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                >
-                  <Trash2 size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => toggleLock(subject)}
+                    className={cn(
+                      "p-2 rounded-lg transition-colors",
+                      subject.isLocked ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20" : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                    )}
+                  >
+                    {subject.isLocked ? <Lock size={20} /> : <Unlock size={20} />}
+                  </button>
+                  <button
+                    onClick={() => handleDelete('subjects', subject.id)}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -26,9 +26,10 @@
         "id": { "type": "string", "description": "The subject unique ID." },
         "nameAr": { "type": "string", "description": "The subject name in Arabic." },
         "nameEn": { "type": "string", "description": "The subject name in English." },
-        "icon": { "type": "string", "description": "The icon name from lucide-react." }
+        "icon": { "type": "string", "description": "The icon name from lucide-react." },
+        "isLocked": { "type": "boolean", "description": "Whether the subject is locked." }
       },
-      "required": ["id", "nameAr", "nameEn"]
+      "required": ["id", "nameAr", "nameEn", "icon"]
     },
     "Section": {
       "title": "Section",
