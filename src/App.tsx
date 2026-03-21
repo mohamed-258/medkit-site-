@@ -49,34 +49,41 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let unsubscribeProfile: () => void;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (unsubscribeProfile) unsubscribeProfile();
       setUser(user);
       if (user) {
         const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          setProfile(docSnap.data() as UserProfile);
-        } else {
-          // Create profile if it doesn't exist
-          const newProfile: UserProfile = {
-            uid: user.uid,
-            email: user.email || '',
-            displayName: user.displayName || 'Student',
-            role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
-            points: 0,
-            completedQuizzes: 0,
-          };
-          await setDoc(docRef, newProfile);
-          setProfile(newProfile);
-        }
+        unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setProfile(docSnap.data() as UserProfile);
+          } else {
+            // Create profile if it doesn't exist
+            const newProfile: UserProfile = {
+              uid: user.uid,
+              email: user.email || '',
+              displayName: user.displayName || 'Student',
+              role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
+              points: 0,
+              completedQuizzes: 0,
+            };
+            setDoc(docRef, newProfile);
+            setProfile(newProfile);
+          }
+          setLoading(false);
+        });
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
+    };
   }, []);
 
   const signInWithGoogle = async () => {

@@ -40,12 +40,8 @@ export default function Dashboard() {
 
     // Fetch authorized emails
     const unsubEmails = onSnapshot(collection(db, 'authorizedEmails'), (snapshot) => {
-      const emails = snapshot.docs.map(doc => doc.data().email);
-      console.log("Authorized emails:", emails);
-      setAuthorizedEmails(emails);
+      setAuthorizedEmails(snapshot.docs.map(doc => doc.data().email));
     });
-
-    console.log("Profile:", profile);
 
     // Fetch leaderboard
     const leaderboardQuery = query(collection(db, 'users'), orderBy('points', 'desc'), limit(5));
