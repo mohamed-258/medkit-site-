@@ -74,7 +74,8 @@ export default function Dashboard() {
 
   const filteredSubjects = subjects.filter(s => {
     if (isAdmin) return true;
-    return (profile?.allowedSubjects || []).includes(s.id);
+    if (!profile?.allowedSubjects || profile.allowedSubjects.length === 0) return true;
+    return profile.allowedSubjects.includes(s.id);
   }).filter(s => 
     (s.nameAr && s.nameAr.includes(searchQuery)) || (s.nameEn && s.nameEn.toLowerCase().includes(searchQuery.toLowerCase()))
   );
