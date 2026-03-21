@@ -19,10 +19,12 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions'>('subjects');
+  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'authorizedEmails'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [authorizedEmails, setAuthorizedEmails] = useState<string[]>([]);
+  const [newEmail, setNewEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -235,10 +237,15 @@ export default function Admin() {
       setLoading(false);
     });
 
+    const unsubEmails = onSnapshot(collection(db, 'authorizedEmails'), (snapshot) => {
+      setAuthorizedEmails(snapshot.docs.map(doc => doc.id));
+    });
+
     return () => {
       unsubSubjects();
       unsubSections();
       unsubQuestions();
+      unsubEmails();
     };
   }, []);
 
@@ -435,6 +442,15 @@ export default function Admin() {
             >
               Questions
             </button>
+            <button
+              onClick={() => setActiveTab('authorizedEmails')}
+              className={cn(
+                "px-6 py-2 rounded-xl font-bold text-sm transition-all",
+                activeTab === 'authorizedEmails' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
+              )}
+            >
+              Authorized Emails
+            </button>
           </div>
         </div>
       </div>
@@ -543,6 +559,52 @@ export default function Admin() {
                 </div>
                 <button
                   onClick={() => handleDelete('sections', section.id)}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                >
+                  <Trash2 size={20} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : activeTab === 'authorizedEmails' ? (
+        <section>
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Authorized Emails</h2>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newEmail) return;
+              try {
+                await setDoc(doc(db, 'authorizedEmails', newEmail), { email: newEmail });
+                setNewEmail('');
+                setMessage({ text: 'Email authorized successfully', type: 'success' });
+              } catch (err) {
+                handleFirestoreError(err, 'create', 'authorizedEmails');
+              }
+            }} className="flex gap-2">
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="Enter email..."
+                className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all"
+              >
+                <Plus size={20} />
+                Authorize
+              </button>
+            </form>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {authorizedEmails.map((email) => (
+              <div key={email} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between group">
+                <span className="font-bold text-slate-900 dark:text-white">{email}</span>
+                <button
+                  onClick={() => handleDelete('authorizedEmails', email)}
                   className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                 >
                   <Trash2 size={20} />

@@ -72,6 +72,15 @@
         "timestamp": { "type": "string", "format": "date-time", "description": "When the quiz was taken." }
       },
       "required": ["id", "userId", "subjectId", "score", "totalQuestions", "timestamp"]
+    },
+    "AuthorizedEmail": {
+      "title": "AuthorizedEmail",
+      "description": "An email address authorized to access the system.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "description": "The authorized email address." }
+      },
+      "required": ["email"]
     }
   },
   "firestore": {
@@ -79,6 +88,7 @@
     "/subjects/{subjectId}": { "schema": "Subject", "description": "Subject categories." },
     "/sections/{sectionId}": { "schema": "Section", "description": "Sections within subjects." },
     "/questions/{questionId}": { "schema": "Question", "description": "Exam questions." },
-    "/quizResults/{resultId}": { "schema": "QuizResult", "description": "Quiz performance records." }
+    "/quizResults/{resultId}": { "schema": "QuizResult", "description": "Quiz performance records." },
+    "/authorizedEmails/{email}": { "schema": "AuthorizedEmail", "description": "Authorized emails." }
   }
 }

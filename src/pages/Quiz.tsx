@@ -138,11 +138,32 @@ export default function Quiz() {
       setTimeLeft(shuffled.length * 60);
       setLoading(false);
       setShowSectionSelection(false);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      handleFirestoreError(err, 'get', 'questions');
       setLoading(false);
     }
   };
+
+  const handleFirestoreError = (error: any, operation: string, path: string) => {
+    const errInfo = {
+      error: error?.message || String(error),
+      operation,
+      path,
+      auth: {
+        uid: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified
+      }
+    };
+    console.error(`Firestore Error [${operation}]:`, JSON.stringify(errInfo));
+    // Check for permission error
+    if (errInfo.error.includes('permission-denied') || errInfo.error.includes('Missing or insufficient permissions')) {
+      setMessage('You are not authorized to access these questions.');
+    } else {
+      setMessage(`Error: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const [message, setMessage] = useState<string | null>(null);
 
   const handleStartQuiz = (sectionId?: string) => {
     setSelectedSectionId(sectionId || '');
@@ -304,6 +325,22 @@ export default function Quiz() {
       <div className="text-center">
         <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
         <p className="text-slate-500 dark:text-slate-400 font-bold">Preparing Questions...</p>
+      </div>
+    </div>
+  );
+
+  if (message) return (
+    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900 px-4">
+      <div className="text-center">
+        <div className="w-20 h-20 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center text-red-600 mx-auto mb-6">
+          <AlertCircle size={40} />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Access Denied</h2>
+        <p className="text-slate-500 dark:text-slate-400 mb-8">{message}</p>
+        <Link to="/dashboard" className="inline-flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-xl font-bold">
+          <ArrowLeft size={20} />
+          Back to Dashboard
+        </Link>
       </div>
     </div>
   );
