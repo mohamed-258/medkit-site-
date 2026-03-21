@@ -222,43 +222,54 @@ export default function Dashboard() {
         {/* Sidebar */}
         <div className="space-y-10">
           {/* Leaderboard */}
-          <section className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center text-amber-500">
-                <Trophy size={20} />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Leaderboard</h2>
-            </div>
-            
-            <div className="space-y-6">
-              {leaderboard.map((user, i) => (
-                <div key={user.uid} className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm",
-                      i === 0 ? "bg-amber-500 text-white" : 
-                      i === 1 ? "bg-slate-300 text-slate-700" :
-                      i === 2 ? "bg-amber-700 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                    )}>
-                      {i + 1}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[120px]">{user.displayName}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{user.completedQuizzes} Quizzes</p>
-                    </div>
+          {profile?.role === 'admin' && (
+            <section className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center text-amber-500">
+                    <Trophy size={20} />
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-black text-blue-600">{user.points}</p>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold">Points</p>
-                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Leaderboard</h2>
                 </div>
-              ))}
-            </div>
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                  title="Refresh Leaderboard"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+              </div>
+              
+              <div className="space-y-6">
+                {leaderboard.map((user, i) => (
+                  <div key={user.uid} className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm",
+                        i === 0 ? "bg-amber-500 text-white" : 
+                        i === 1 ? "bg-slate-300 text-slate-700" :
+                        i === 2 ? "bg-amber-700 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                      )}>
+                        {i + 1}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[120px]">{user.displayName}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.completedQuizzes} Quizzes</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-blue-600">{user.points}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">Points</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-            <Link to="#" className="mt-8 block text-center py-3 rounded-xl border border-slate-100 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-              View Full Leaderboard
-            </Link>
-          </section>
+              <Link to="#" className="mt-8 block text-center py-3 rounded-xl border border-slate-100 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                View Full Leaderboard
+              </Link>
+            </section>
+          )}
 
           {/* Quick Tips */}
           <section className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-xl shadow-blue-500/20">
