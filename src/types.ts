@@ -4,6 +4,9 @@ export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
+  firstName?: string;
+  fatherName?: string;
+  dateOfBirth?: string;
   role: UserRole;
   points: number;
   completedQuizzes: number;

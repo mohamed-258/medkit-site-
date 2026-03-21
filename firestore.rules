@@ -39,6 +39,9 @@ service cloud.firestore {
              data.email is string &&
              data.role in ['admin', 'student'] &&
              (!('displayName' in data) || data.displayName is string) &&
+             (!('firstName' in data) || data.firstName is string) &&
+             (!('fatherName' in data) || data.fatherName is string) &&
+             (!('dateOfBirth' in data) || data.dateOfBirth is string) &&
              (!('points' in data) || data.points is number) &&
              (!('completedQuizzes' in data) || data.completedQuizzes is number) &&
              (!('sectionPoints' in data) || data.sectionPoints is map);

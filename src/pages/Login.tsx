@@ -5,10 +5,12 @@ import { motion } from 'motion/react';
 import { LogIn, Mail, Lock, ShieldCheck, ArrowLeft, Chrome } from 'lucide-react';
 
 export default function Login() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, loginWithEmail } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -23,6 +25,32 @@ export default function Login() {
         setError('This domain is not authorized for Firebase Authentication. Please add your Netlify domain in the Firebase Console.');
       } else {
         setError(err.message || 'An error occurred during login. Please try again.');
+      }
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError('Please enter both email and password.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      await loginWithEmail(email, password);
+      navigate('/dashboard');
+    } catch (err: any) {
+      if (err.code === 'auth/invalid-credential') {
+        setError('Invalid email or password.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Email/Password authentication is not enabled. Please enable it in your Firebase Console.');
+      } else {
+        setError(err.message || 'An error occurred during login.');
       }
       console.error(err);
     } finally {
@@ -47,8 +75,8 @@ export default function Login() {
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-xl border border-red-100 dark:border-red-800 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-            {error}
+            <span className="w-1.5 h-1.5 bg-red-600 rounded-full shrink-0"></span>
+            <p>{error}</p>
           </div>
         )}
 
@@ -71,27 +99,37 @@ export default function Login() {
             </div>
           </div>
 
-          <div className="space-y-4 opacity-50 pointer-events-none">
+          <form onSubmit={handleEmailLogin} className="space-y-4">
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
               <input
                 type="email"
-                placeholder="Email Address"
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all"
+                placeholder="Email Address (البريد الإلكتروني)"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white"
+                required
               />
             </div>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
               <input
                 type="password"
-                placeholder="Password"
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all"
+                placeholder="Password (كلمة المرور)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white"
+                required
               />
             </div>
-            <button className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20">
-              Login
+            <button 
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50"
+            >
+              {loading ? 'Logging in...' : 'Login'}
             </button>
-          </div>
+          </form>
         </div>
 
         <p className="mt-10 text-center text-slate-500 dark:text-slate-400">

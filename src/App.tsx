@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
-import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { UserProfile } from './types';
@@ -21,6 +21,8 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   signInWithGoogle: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
+  registerWithEmail: (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -85,6 +87,29 @@ function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithPopup(auth, provider);
   };
 
+  const loginWithEmail = async (email: string, pass: string) => {
+    await signInWithEmailAndPassword(auth, email, pass);
+  };
+
+  const registerWithEmail = async (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+    const user = userCredential.user;
+    
+    const newProfile: UserProfile = {
+      uid: user.uid,
+      email: user.email || '',
+      displayName: `${data.firstName} ${data.fatherName}`,
+      firstName: data.firstName,
+      fatherName: data.fatherName,
+      dateOfBirth: data.dateOfBirth,
+      role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
+      points: 0,
+      completedQuizzes: 0,
+    };
+    await setDoc(doc(db, 'users', user.uid), newProfile);
+    setProfile(newProfile);
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
@@ -92,7 +117,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = profile?.role === 'admin' || user?.email === 'mhsn68503@gmail.com';
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout }}>
       {children}
     </AuthContext.Provider>
   );
