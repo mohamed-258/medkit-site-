@@ -162,7 +162,7 @@ export default function Dashboard() {
                     whileHover={{ y: -4 }}
                     className="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-blue-200 dark:hover:border-blue-900 transition-all"
                   >
-                    {subject.isLocked && !authorizedEmails.includes(profile?.email || '') && profile?.role !== 'admin' ? (
+                    {subject.isLocked && !authorizedEmails.map(e => e.toLowerCase()).includes(profile?.email?.toLowerCase() || '') && profile?.role !== 'admin' ? (
                       <div className="flex items-center justify-between opacity-50 cursor-not-allowed">
                         <div className="flex items-center gap-4">
                           <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400">
