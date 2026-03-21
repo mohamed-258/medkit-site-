@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
-import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { UserProfile } from './types';
@@ -88,7 +88,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+    if (!userCredential.user.emailVerified) {
+      await signOut(auth);
+      throw new Error('email-not-verified');
+    }
   };
 
   const registerWithEmail = async (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => {
@@ -107,7 +111,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
       completedQuizzes: 0,
     };
     await setDoc(doc(db, 'users', user.uid), newProfile);
-    setProfile(newProfile);
+    
+    await sendEmailVerification(user);
+    await signOut(auth);
   };
 
   const logout = async () => {

@@ -45,7 +45,9 @@ export default function Login() {
       await loginWithEmail(email, password);
       navigate('/dashboard');
     } catch (err: any) {
-      if (err.code === 'auth/invalid-credential') {
+      if (err.message === 'email-not-verified') {
+        setError('يرجى التحقق من بريدك الإلكتروني لتفعيل الحساب قبل تسجيل الدخول.');
+      } else if (err.code === 'auth/invalid-credential') {
         setError('Invalid email or password.');
       } else if (err.code === 'auth/operation-not-allowed') {
         setError('Email/Password authentication is not enabled. Please enable it in your Firebase Console.');
