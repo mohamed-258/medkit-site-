@@ -10,7 +10,8 @@
         "displayName": { "type": "string", "description": "The user's full name." },
         "role": { "type": "string", "enum": ["admin", "student"], "description": "The user's role." },
         "points": { "type": "number", "description": "Total points earned." },
-        "completedQuizzes": { "type": "number", "description": "Number of quizzes completed." }
+        "completedQuizzes": { "type": "number", "description": "Number of quizzes completed." },
+        "sectionPoints": { "type": "object", "additionalProperties": { "type": "number" }, "description": "Highest points earned per section or subject." }
       },
       "required": ["uid", "email", "role"]
     },

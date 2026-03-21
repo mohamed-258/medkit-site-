@@ -33,6 +33,9 @@ export default function Quiz() {
   const [submitting, setSubmitting] = useState(false);
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<number>>(new Set());
   const [visitedQuestions, setVisitedQuestions] = useState<Set<number>>(new Set([0]));
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [savedProgress, setSavedProgress] = useState<any>(null);
+  const [pendingSectionId, setPendingSectionId] = useState<string | undefined>(undefined);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -81,6 +84,22 @@ export default function Quiz() {
           }
         }
 
+        // Check for saved progress if no sections
+        const key = `medkit_quiz_${profile?.uid}_${subjectId}_all`;
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            setSavedProgress(parsed);
+            setPendingSectionId(undefined);
+            setShowResumeModal(true);
+            setLoading(false);
+            return;
+          } catch (e) {
+            localStorage.removeItem(key);
+          }
+        }
+
         await fetchQuestions(subjectId, currentSubject?.id);
       } catch (err) {
         console.error(err);
@@ -89,7 +108,7 @@ export default function Quiz() {
     };
 
     fetchData();
-  }, [subjectId]);
+  }, [subjectId, profile?.uid]);
 
   const fetchQuestions = async (sId: string, firestoreId?: string, sectionId?: string) => {
     setLoading(true);
@@ -127,8 +146,60 @@ export default function Quiz() {
 
   const handleStartQuiz = (sectionId?: string) => {
     setSelectedSectionId(sectionId || '');
+    
+    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${sectionId || 'all'}`;
+    const saved = localStorage.getItem(key);
+    
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setSavedProgress(parsed);
+        setPendingSectionId(sectionId);
+        setShowResumeModal(true);
+        return;
+      } catch (e) {
+        localStorage.removeItem(key);
+      }
+    }
+    
     fetchQuestions(subjectId!, subject?.id, sectionId);
   };
+
+  const resumeQuiz = () => {
+    if (savedProgress) {
+      setQuestions(savedProgress.questions);
+      setCurrentIdx(savedProgress.currentIdx);
+      setSelectedAnswers(savedProgress.selectedAnswers);
+      setTimeLeft(savedProgress.timeLeft);
+      setFlaggedQuestions(new Set(savedProgress.flaggedQuestions));
+      setVisitedQuestions(new Set(savedProgress.visitedQuestions));
+      setShowSectionSelection(false);
+      setShowResumeModal(false);
+      setLoading(false);
+    }
+  };
+
+  const startNewQuiz = () => {
+    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${pendingSectionId || 'all'}`;
+    localStorage.removeItem(key);
+    setShowResumeModal(false);
+    fetchQuestions(subjectId!, subject?.id, pendingSectionId);
+  };
+
+  useEffect(() => {
+    if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal) return;
+    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${selectedSectionId || 'all'}`;
+    const progress = {
+      currentIdx,
+      selectedAnswers,
+      timeLeft,
+      flaggedQuestions: Array.from(flaggedQuestions),
+      visitedQuestions: Array.from(visitedQuestions),
+      questions,
+      timestamp: new Date().getTime()
+    };
+    localStorage.setItem(key, JSON.stringify(progress));
+  }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, profile?.uid]);
 
   useEffect(() => {
     if (timeLeft > 0 && !isFinished && !loading) {
@@ -170,6 +241,10 @@ export default function Quiz() {
     setIsFinished(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
+    // Clear saved progress
+    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${selectedSectionId || 'all'}`;
+    localStorage.removeItem(key);
+
     let score = 0;
     questions.forEach((q, i) => {
       if (selectedAnswers[i] === q.correctAnswer) {
@@ -194,12 +269,24 @@ export default function Quiz() {
       
       // Update user profile
       const userRef = doc(db, 'users', profile!.uid);
-      await updateDoc(userRef, {
-        points: increment(score * 10),
+      const sectionKey = selectedSectionId || `${subjectId}_all`;
+      const currentSectionPoints = profile!.sectionPoints?.[sectionKey] || 0;
+      const newPoints = score * 10;
+      
+      const updates: any = {
         completedQuizzes: increment(1)
-      });
+      };
 
-      navigate(`/result/${resultId}`, { state: { result: resultData, questions, selectedAnswers } });
+      let pointsEarned = 0;
+      if (newPoints > currentSectionPoints) {
+        pointsEarned = newPoints - currentSectionPoints;
+        updates.points = increment(pointsEarned);
+        updates[`sectionPoints.${sectionKey}`] = newPoints;
+      }
+
+      await updateDoc(userRef, updates);
+
+      navigate(`/result/${resultId}`, { state: { result: resultData, questions, selectedAnswers, pointsEarned } });
     } catch (err) {
       console.error(err);
       setSubmitting(false);
@@ -221,6 +308,34 @@ export default function Quiz() {
     </div>
   );
 
+  if (showResumeModal) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 px-4">
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-xl max-w-md w-full text-center border border-slate-100 dark:border-slate-700">
+        <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center text-blue-600 mx-auto mb-6">
+          <Clock size={40} />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Resume Quiz?</h2>
+        <p className="text-slate-500 dark:text-slate-400 mb-8">
+          You have an unfinished quiz in progress. Would you like to resume where you left off or start a new one?
+        </p>
+        <div className="space-y-3">
+          <button
+            onClick={resumeQuiz}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
+          >
+            Resume Quiz
+          </button>
+          <button
+            onClick={startNewQuiz}
+            className="w-full py-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-all"
+          >
+            Start New Quiz
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (showSectionSelection) return (
     <div className="max-w-4xl mx-auto px-4 py-20">
       <div className="text-center mb-12">
@@ -237,7 +352,15 @@ export default function Quiz() {
           <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
             <LayoutGrid size={24} />
           </div>
-          <h3 className="text-xl font-bold mb-2">All Sections</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-bold">All Sections</h3>
+            {profile?.sectionPoints?.[`${subjectId}_all`] !== undefined && (
+              <div className="flex items-center gap-1 text-sm font-bold text-blue-200 bg-blue-500/50 px-2 py-1 rounded-lg">
+                <Star size={14} fill="currentColor" />
+                {profile.sectionPoints[`${subjectId}_all`]}
+              </div>
+            )}
+          </div>
           <p className="text-blue-100 text-sm">Test your knowledge across the entire subject.</p>
         </motion.button>
 
@@ -251,7 +374,15 @@ export default function Quiz() {
             <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center mb-6 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
               <BookOpen size={24} />
             </div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{section.nameEn || section.nameAr}</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white">{section.nameEn || section.nameAr}</h3>
+              {profile?.sectionPoints?.[section.id] !== undefined && (
+                <div className="flex items-center gap-1 text-sm font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">
+                  <Star size={14} fill="currentColor" />
+                  {profile.sectionPoints[section.id]}
+                </div>
+              )}
+            </div>
             <p className="text-slate-500 dark:text-slate-400 text-sm">{section.nameEn && section.nameAr ? section.nameAr : 'Practice this section specifically.'}</p>
           </motion.button>
         ))}

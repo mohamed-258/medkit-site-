@@ -7,6 +7,7 @@ export interface UserProfile {
   role: UserRole;
   points: number;
   completedQuizzes: number;
+  sectionPoints?: Record<string, number>;
 }
 
 export interface Subject {

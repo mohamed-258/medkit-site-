@@ -24,7 +24,7 @@ export default function Result() {
     );
   }
 
-  const { result, questions, selectedAnswers } = state;
+  const { result, questions, selectedAnswers, pointsEarned } = state;
   const percentage = Math.round((result.score / result.totalQuestions) * 100);
 
   return (
@@ -55,7 +55,7 @@ export default function Result() {
           </div>
           <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
             <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Points Earned</p>
-            <p className="text-3xl font-black text-amber-500">+{result.score * 10}</p>
+            <p className="text-3xl font-black text-amber-500">+{pointsEarned !== undefined ? pointsEarned : result.score * 10}</p>
           </div>
         </div>
 

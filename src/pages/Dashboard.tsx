@@ -136,7 +136,15 @@ export default function Dashboard() {
               </div>
             ) : filteredSubjects.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {filteredSubjects.map((subject) => (
+                {filteredSubjects.map((subject) => {
+                  const subjectPoints = Object.entries(profile?.sectionPoints || {}).reduce((acc, [key, val]) => {
+                    if (key === `${subject.id}_all` || sections.find(s => s.id === key && s.subjectId === subject.id)) {
+                      return acc + val;
+                    }
+                    return acc;
+                  }, 0);
+
+                  return (
                   <motion.div
                     key={subject.id}
                     whileHover={{ y: -4 }}
@@ -149,7 +157,15 @@ export default function Dashboard() {
                         </div>
                         <div>
                           <h3 className="font-bold text-slate-900 dark:text-white text-lg">{subject.nameEn || subject.nameAr || 'Unnamed Category'}</h3>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">{subject.nameEn && subject.nameAr ? subject.nameAr : ''}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <p className="text-sm text-slate-500 dark:text-slate-400">{subject.nameEn && subject.nameAr ? subject.nameAr : ''}</p>
+                            {subjectPoints > 0 && (
+                              <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-md">
+                                <Star size={12} fill="currentColor" />
+                                {subjectPoints} pts
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="w-10 h-10 rounded-full border border-slate-100 dark:border-slate-800 flex items-center justify-center text-slate-400 group-hover:text-blue-600 group-hover:border-blue-200 transition-all">
@@ -157,7 +173,7 @@ export default function Dashboard() {
                       </div>
                     </Link>
                   </motion.div>
-                ))}
+                )})}
               </div>
             ) : (
               <div className="text-center py-12 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">

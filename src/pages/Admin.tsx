@@ -183,6 +183,7 @@ export default function Admin() {
         batch.set(docRef, {
           ...q,
           subjectId: selectedSubjectId,
+          sectionId: selectedSectionId || '',
           id: docRef.id,
           createdAt: new Date().toISOString()
         });
@@ -343,6 +344,25 @@ export default function Admin() {
       setMessage({ text: 'Selected questions deleted successfully', type: 'success' });
     } catch (err) {
       handleFirestoreError(err, 'bulk-delete', 'questions');
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  };
+
+  const handleBulkMoveToSection = async (sectionId: string) => {
+    if (!sectionId || selectedQuestionIds.size === 0) return;
+    
+    setIsDeletingBulk(true);
+    try {
+      const batch = writeBatch(db);
+      selectedQuestionIds.forEach(id => {
+        batch.update(doc(db, 'questions', id), { sectionId: sectionId === 'none' ? '' : sectionId });
+      });
+      await batch.commit();
+      setSelectedQuestionIds(new Set());
+      setMessage({ text: `Successfully moved ${selectedQuestionIds.size} questions`, type: 'success' });
+    } catch (err) {
+      handleFirestoreError(err, 'bulk-update', 'questions');
     } finally {
       setIsDeletingBulk(false);
     }
@@ -545,14 +565,34 @@ export default function Admin() {
                     {selectedQuestionIds.size === filteredQuestions.length ? 'Deselect All' : 'Select All'}
                   </button>
                   {selectedQuestionIds.size > 0 && (
-                    <button
-                      onClick={handleBulkDelete}
-                      disabled={isDeletingBulk}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 transition-all disabled:opacity-50"
-                    >
-                      {isDeletingBulk ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                      Delete Selected ({selectedQuestionIds.size})
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {selectedSubjectId && (
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleBulkMoveToSection(e.target.value);
+                              e.target.value = "";
+                            }
+                          }}
+                          disabled={isDeletingBulk}
+                          className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg text-xs font-bold border-none focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:opacity-50"
+                        >
+                          <option value="">Move to Section...</option>
+                          <option value="none">-- Remove from Section --</option>
+                          {sections.filter(s => s.subjectId === selectedSubjectId).map(s => (
+                            <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        onClick={handleBulkDelete}
+                        disabled={isDeletingBulk}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 transition-all disabled:opacity-50"
+                      >
+                        {isDeletingBulk ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        Delete Selected ({selectedQuestionIds.size})
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -584,6 +624,7 @@ export default function Admin() {
                   onChange={(e) => {
                     setSelectedSubjectId(e.target.value);
                     setSelectedSectionId('');
+                    setSelectedQuestionIds(new Set());
                   }}
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white"
                 >
@@ -598,7 +639,10 @@ export default function Admin() {
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2 mr-2">Select Section</label>
                 <select 
                   value={selectedSectionId}
-                  onChange={(e) => setSelectedSectionId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedSectionId(e.target.value);
+                    setSelectedQuestionIds(new Set());
+                  }}
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white"
                   disabled={!selectedSubjectId}
                 >

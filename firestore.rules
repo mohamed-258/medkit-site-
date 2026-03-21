@@ -40,7 +40,8 @@ service cloud.firestore {
              data.role in ['admin', 'student'] &&
              (!('displayName' in data) || data.displayName is string) &&
              (!('points' in data) || data.points is number) &&
-             (!('completedQuizzes' in data) || data.completedQuizzes is number);
+             (!('completedQuizzes' in data) || data.completedQuizzes is number) &&
+             (!('sectionPoints' in data) || data.sectionPoints is map);
     }
 
     function isValidSubject(data) {
