@@ -19,8 +19,10 @@ export default function Login() {
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user') {
         setError('Login window was closed before completion. Please try again.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for Firebase Authentication. Please add your Netlify domain in the Firebase Console.');
       } else {
-        setError('An error occurred during login. Please try again.');
+        setError(err.message || 'An error occurred during login. Please try again.');
       }
       console.error(err);
     } finally {
