@@ -1,0 +1,107 @@
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../App';
+import { motion } from 'motion/react';
+import { LogIn, Mail, Lock, ShieldCheck, ArrowLeft, Chrome } from 'lucide-react';
+
+export default function Login() {
+  const { signInWithGoogle } = useAuth();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await signInWithGoogle();
+      navigate('/dashboard');
+    } catch (err: any) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Login window was closed before completion. Please try again.');
+      } else {
+        setError('An error occurred during login. Please try again.');
+      }
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-[calc(100vh-64px)] flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-800 p-8 lg:p-12"
+      >
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-blue-500/20">
+            <ShieldCheck size={32} />
+          </div>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">Welcome Back</h1>
+          <p className="text-slate-500 dark:text-slate-400">Login to continue with MedKit</p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-xl border border-red-100 dark:border-red-800 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <button
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
+          >
+            <Chrome size={20} className="text-blue-600" />
+            {loading ? 'Loading...' : 'Login with Google'}
+          </button>
+
+          <div className="relative py-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200 dark:border-slate-800"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white dark:bg-slate-900 px-4 text-slate-400">Or via Email</span>
+            </div>
+          </div>
+
+          <div className="space-y-4 opacity-50 pointer-events-none">
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <input
+                type="email"
+                placeholder="Email Address"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all"
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <input
+                type="password"
+                placeholder="Password"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all"
+              />
+            </div>
+            <button className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20">
+              Login
+            </button>
+          </div>
+        </div>
+
+        <p className="mt-10 text-center text-slate-500 dark:text-slate-400">
+          Don't have an account?{' '}
+          <Link to="/register" className="text-blue-600 font-bold hover:underline">Create New Account</Link>
+        </p>
+
+        <Link to="/" className="mt-8 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-sm">
+          <ArrowLeft size={16} />
+          Back to Home
+        </Link>
+      </motion.div>
+    </div>
+  );
+}

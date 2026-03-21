@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: users
+    // Fields: uid (string), email (string), displayName (string), role (string), points (number), completedQuizzes (number)
+    //
+    // Collection: subjects
+    // Fields: id (string), nameAr (string), nameEn (string), icon (string)
+    //
+    // Collection: questions
+    // Fields: id (string), subjectId (string), title (string), options (list), correctAnswer (number), explanation (string), difficulty (string)
+    //
+    // Collection: quizResults
+    // Fields: id (string), userId (string), subjectId (string), score (number), totalQuestions (number), timestamp (string)
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          request.auth.token.email == "mhsn68503@gmail.com");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['admin', 'student'] &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('points' in data) || data.points is number) &&
+             (!('completedQuizzes' in data) || data.completedQuizzes is number);
+    }
+
+    function isValidSubject(data) {
+      return data.keys().hasAny(['nameAr', 'nameEn']) &&
+             (!('id' in data) || data.id is string) &&
+             (!('nameAr' in data) || data.nameAr is string) &&
+             (!('nameEn' in data) || data.nameEn is string) &&
+             (!('icon' in data) || data.icon is string);
+    }
+
+    function isValidSection(data) {
+      return data.keys().hasAll(['subjectId']) &&
+             data.keys().hasAny(['nameAr', 'nameEn']) &&
+             (!('id' in data) || data.id is string) &&
+             data.subjectId is string &&
+             (!('nameAr' in data) || data.nameAr is string) &&
+             (!('nameEn' in data) || data.nameEn is string);
+    }
+
+    function isValidQuestion(data) {
+      return data.keys().hasAll(['subjectId', 'title', 'options', 'correctAnswer']) &&
+             (!('id' in data) || data.id is string) &&
+             data.subjectId is string &&
+             (!('sectionId' in data) || data.sectionId is string) &&
+             data.title is string &&
+             data.options is list &&
+             data.options.size() >= 2 &&
+             data.correctAnswer is number &&
+             (!('explanation' in data) || data.explanation is string) &&
+             (!('difficulty' in data) || data.difficulty is string) &&
+             (!('createdAt' in data) || data.createdAt is string);
+    }
+
+    function isValidQuizResult(data) {
+      return data.keys().hasAll(['id', 'userId', 'subjectId', 'score', 'totalQuestions', 'timestamp']) &&
+             data.id is string &&
+             data.userId is string &&
+             data.subjectId is string &&
+             data.score is number &&
+             data.totalQuestions is number &&
+             data.timestamp is string;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'student';
+      allow update: if isAuthenticated() && (isAdmin() || (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin();
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidSubject(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /sections/{sectionId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidSection(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidQuestion(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /quizResults/{resultId} {
+      allow read: if isAuthenticated() && (isAdmin() || request.auth.uid == resource.data.userId);
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidQuizResult(request.resource.data);
+      allow update: if isAdmin() && isValidQuizResult(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A student or admin user of the Medkit platform.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique Firebase Auth ID." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's full name." },
+        "role": { "type": "string", "enum": ["admin", "student"], "description": "The user's role." },
+        "points": { "type": "number", "description": "Total points earned." },
+        "completedQuizzes": { "type": "number", "description": "Number of quizzes completed." }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "A medical subject category (e.g., Anatomy).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The subject unique ID." },
+        "nameAr": { "type": "string", "description": "The subject name in Arabic." },
+        "nameEn": { "type": "string", "description": "The subject name in English." },
+        "icon": { "type": "string", "description": "The icon name from lucide-react." }
+      },
+      "required": ["id", "nameAr", "nameEn"]
+    },
+    "Section": {
+      "title": "Section",
+      "description": "A sub-category within a subject (e.g., Cardiology within Internal Medicine).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The section unique ID." },
+        "subjectId": { "type": "string", "description": "The ID of the subject this section belongs to." },
+        "nameAr": { "type": "string", "description": "The section name in Arabic." },
+        "nameEn": { "type": "string", "description": "The section name in English." }
+      },
+      "required": ["id", "subjectId", "nameAr", "nameEn"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "A multiple-choice question.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The question unique ID." },
+        "subjectId": { "type": "string", "description": "The ID of the subject this question belongs to." },
+        "sectionId": { "type": "string", "description": "The ID of the section this question belongs to (optional)." },
+        "title": { "type": "string", "description": "The question text." },
+        "options": { "type": "array", "items": { "type": "string" }, "description": "The 4 multiple-choice options." },
+        "correctAnswer": { "type": "number", "description": "The index of the correct option (0-3)." },
+        "explanation": { "type": "string", "description": "The explanation for the correct answer." },
+        "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"], "description": "The difficulty level." }
+      },
+      "required": ["id", "subjectId", "title", "options", "correctAnswer"]
+    },
+    "QuizResult": {
+      "title": "QuizResult",
+      "description": "The result of a quiz taken by a student.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The result unique ID." },
+        "userId": { "type": "string", "description": "The ID of the user who took the quiz." },
+        "subjectId": { "type": "string", "description": "The ID of the subject." },
+        "sectionId": { "type": "string", "description": "The ID of the section (optional)." },
+        "score": { "type": "number", "description": "The score achieved." },
+        "totalQuestions": { "type": "number", "description": "The total number of questions." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the quiz was taken." }
+      },
+      "required": ["id", "userId", "subjectId", "score", "totalQuestions", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles." },
+    "/subjects/{subjectId}": { "schema": "Subject", "description": "Subject categories." },
+    "/sections/{sectionId}": { "schema": "Section", "description": "Sections within subjects." },
+    "/questions/{questionId}": { "schema": "Question", "description": "Exam questions." },
+    "/quizResults/{resultId}": { "schema": "QuizResult", "description": "Quiz performance records." }
+  }
+}

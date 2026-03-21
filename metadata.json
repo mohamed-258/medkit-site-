@@ -1,0 +1,5 @@
+{
+  "name": "Medkit",
+  "description": "An online platform for medical students at Minya University to practice and solve exam questions across various subjects like Anatomy and Physiology.",
+  "requestFramePermissions": []
+}
