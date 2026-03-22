@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!profile) return;
     // Fetch subjects
     const unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {
       setSubjects(snapshot.docs.map(doc => {
@@ -41,7 +42,7 @@ export default function Dashboard() {
       unsubSubjects();
       unsubSections();
     };
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
     // Fetch leaderboard

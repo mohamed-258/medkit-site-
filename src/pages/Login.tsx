@@ -19,14 +19,14 @@ export default function Login() {
       await signInWithGoogle();
       navigate('/dashboard');
     } catch (err: any) {
-      if (err.code === 'auth/popup-closed-by-user') {
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         setError('Login window was closed before completion. Please try again.');
       } else if (err.code === 'auth/unauthorized-domain') {
         setError('This domain is not authorized for Firebase Authentication. Please add your Netlify domain in the Firebase Console.');
       } else {
         setError(err.message || 'An error occurred during login. Please try again.');
+        console.error(err);
       }
-      console.error(err);
     } finally {
       setLoading(false);
     }

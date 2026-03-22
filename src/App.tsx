@@ -92,7 +92,14 @@ function AuthProvider({ children }: { children: ReactNode }) {
     provider.setCustomParameters({
       prompt: 'select_account'
     });
-    await signInWithPopup(auth, provider);
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      throw err;
+    }
   };
 
   const loginWithEmail = async (email: string, pass: string) => {

@@ -35,7 +35,7 @@ service cloud.firestore {
 
     function isSubjectAllowed(subjectId) {
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return isAdmin() || (userDoc.data.allowedSubjects != null && subjectId in userDoc.data.allowedSubjects);
+      return isAdmin() || (userDoc.exists() && userDoc.data.allowedSubjects != null && subjectId in userDoc.data.allowedSubjects);
     }
 
     function isValidUser(data) {
@@ -105,7 +105,7 @@ service cloud.firestore {
     }
 
     match /subjects/{subjectId} {
-      allow read: if isAuthenticated() && (!resource.data.isLocked || isSubjectAllowed(subjectId));
+      allow read: if isAuthenticated();
       allow create, update: if isAdmin() && isValidSubject(request.resource.data);
       allow delete: if isAdmin();
     }
@@ -117,7 +117,7 @@ service cloud.firestore {
     }
 
     match /questions/{questionId} {
-      allow read: if isAuthenticated() && isSubjectAllowed(resource.data.subjectId);
+      allow read: if isAuthenticated();
       allow create, update: if isAdmin() && isValidQuestion(request.resource.data);
       allow delete: if isAdmin();
     }
