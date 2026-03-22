@@ -666,8 +666,6 @@ export default function Admin() {
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">User Permissions</h2>
             <button
               onClick={() => {
-                // Since onSnapshot is real-time, this is just for visual feedback.
-                // If the user feels it's not updating, this will reassure them.
                 setMessage({ text: 'Refreshing user list...', type: 'success' });
                 setTimeout(() => setMessage(null), 2000);
               }}
@@ -677,62 +675,89 @@ export default function Admin() {
               Refresh
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Object.values(users.reduce((acc, user) => {
-              if (!acc[user.email]) acc[user.email] = user;
-              return acc;
-            }, {} as Record<string, UserProfile>)).map((user) => (
-              <div key={user.uid} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                <div className="mb-4 flex justify-between items-start">
-                  <div>
-                    <h3 className="font-bold text-slate-900 dark:text-white">{user.displayName || user.email}</h3>
-                    <p className="text-xs text-slate-500">{user.email}</p>
-                    {user.createdAt && (
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Joined: {new Date(user.createdAt).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {user.email !== 'mhsn68503@gmail.com' && (
-                      <button
-                        onClick={() => toggleUserRole(user)}
-                        className={cn(
-                          "px-3 py-1 rounded-lg text-xs font-bold transition-colors",
-                          user.role === 'admin' ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                        )}
-                      >
-                        {user.role === 'admin' ? 'Demote to Student' : 'Promote to Admin'}
-                      </button>
-                    )}
-                    {user.email === 'mhsn68503@gmail.com' && (
-                      <button
-                        onClick={() => handleDelete('users', user.uid)}
-                        className="text-red-500 hover:text-red-700 p-2"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
+                  <th className="py-4 px-4">User</th>
+                  <th className="py-4 px-4">DOB</th>
+                  <th className="py-4 px-4">Joined</th>
+                  <th className="py-4 px-4">Role</th>
+                  <th className="py-4 px-4">Access</th>
+                  <th className="py-4 px-4">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {Object.values(users.reduce((acc, user) => {
+                  if (!acc[user.email]) acc[user.email] = user;
+                  return acc;
+                }, {} as Record<string, UserProfile>)).map((user) => (
+                  <tr key={user.uid} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <td className="py-4 px-4">
+                      <div className="font-bold text-slate-900 dark:text-white">{user.displayName || 'N/A'}</div>
+                      <div className="text-xs text-slate-500">{user.email}</div>
+                    </td>
+                    <td className="py-4 px-4 text-sm text-slate-600 dark:text-slate-300">{user.dateOfBirth || 'N/A'}</td>
+                    <td className="py-4 px-4 text-sm text-slate-600 dark:text-slate-300">
+                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td className="py-4 px-4 text-sm font-medium capitalize text-slate-700 dark:text-slate-200">{user.role}</td>
+                    <td className="py-4 px-4 text-sm text-slate-600 dark:text-slate-300">
+                      {(user.allowedSubjects || []).length} / {subjects.length}
+                    </td>
+                    <td className="py-4 px-4">
+                      {user.email !== 'mhsn68503@gmail.com' && (
+                        <button
+                          onClick={() => toggleUserRole(user)}
+                          className={cn(
+                            "px-3 py-1 rounded-lg text-xs font-bold transition-colors",
+                            user.role === 'admin' ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                          )}
+                        >
+                          {user.role === 'admin' ? 'Demote' : 'Promote'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : activeTab === 'subjects' ? (
+        <section>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Subjects & Sections</h2>
+          <div className="space-y-4">
+            {subjects.map((subject) => {
+              const subjectSections = sections.filter(s => s.subjectId === subject.id);
+              return (
+                <div key={subject.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById(`subject-${subject.id}`);
+                      if (el) el.classList.toggle('hidden');
+                    }}
+                    className="w-full p-6 flex items-center justify-between font-bold text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    {subject.nameEn || subject.nameAr}
+                    <ChevronDown size={20} className="text-slate-400" />
+                  </button>
+                  <div id={`subject-${subject.id}`} className="hidden p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                    {subjectSections.length > 0 ? (
+                      <ul className="space-y-2">
+                        {subjectSections.map(section => (
+                          <li key={section.id} className="text-sm text-slate-600 dark:text-slate-300">
+                            {section.nameEn || section.nameAr}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-slate-500">No sections found.</p>
                     )}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  {subjects.map(subject => (
-                    <div key={subject.id} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-700 dark:text-slate-300">{subject.nameEn || subject.nameAr}</span>
-                      <button
-                        onClick={() => toggleSubjectAccess(user, subject.id)}
-                        className={cn(
-                          "p-2 rounded-lg transition-colors",
-                          (user.allowedSubjects || []).includes(subject.id) ? "text-blue-600 bg-blue-50 dark:bg-blue-900/20" : "text-slate-400 hover:text-slate-600"
-                        )}
-                      >
-                        {(user.allowedSubjects || []).includes(subject.id) ? <Unlock size={18} /> : <Lock size={18} />}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : activeTab === 'quizResults' ? (
