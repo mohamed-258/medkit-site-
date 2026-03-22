@@ -65,7 +65,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
               uid: user.uid,
               email: user.email || '',
               displayName: user.displayName || 'Student',
-              role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
+              role: (user.email === 'mhsn68503@gmail.com' || user.email === 'shawkatheba4@gmail.com') ? 'admin' : 'student',
               points: 0,
               completedQuizzes: 0,
               createdAt: new Date().toISOString(),
@@ -121,7 +121,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
       firstName: data.firstName,
       fatherName: data.fatherName,
       dateOfBirth: data.dateOfBirth,
-      role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
+      role: (user.email === 'mhsn68503@gmail.com' || user.email === 'shawkatheba4@gmail.com') ? 'admin' : 'student',
       points: 0,
       completedQuizzes: 0,
     };
@@ -135,7 +135,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
 
-  const isAdmin = profile?.role === 'admin' || user?.email === 'mhsn68503@gmail.com';
+  const isAdmin = profile?.role === 'admin' || user?.email === 'mhsn68503@gmail.com' || user?.email === 'shawkatheba4@gmail.com';
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout }}>
