@@ -667,7 +667,10 @@ export default function Admin() {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {users.map((user) => (
+            {Object.values(users.reduce((acc, user) => {
+              if (!acc[user.email]) acc[user.email] = user;
+              return acc;
+            }, {} as Record<string, UserProfile>)).map((user) => (
               <div key={user.uid} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
                 <div className="mb-4 flex justify-between items-start">
                   <div>
@@ -708,24 +711,27 @@ export default function Admin() {
         </section>
       ) : activeTab === 'quizResults' ? (
         <section>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Quiz Results</h2>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Quiz Results (Grouped by User)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {quizResults.map((result) => (
-              <div key={result.id} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between group">
-                <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white">
-                    {users.find(u => u.uid === result.userId)?.displayName || 'Unknown User'}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    {subjects.find(s => s.id === result.subjectId)?.nameEn || 'Unknown Subject'}
-                  </p>
-                  <p className="text-xs text-slate-500">Score: {result.score} / {result.totalQuestions}</p>
-                </div>
+            {Object.entries(quizResults.reduce((acc, result) => {
+              if (!acc[result.userId]) acc[result.userId] = [];
+              acc[result.userId].push(result);
+              return acc;
+            }, {} as Record<string, QuizResult[]>)).map(([userId, results]) => (
+              <div key={userId} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                <h3 className="font-bold text-slate-900 dark:text-white">
+                  {users.find(u => u.uid === userId)?.displayName || 'Unknown User'}
+                </h3>
+                <p className="text-xs text-slate-500">Total Quizzes: {results.length}</p>
                 <button
-                  onClick={() => handleDeleteQuizResult(result)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                  onClick={async () => {
+                    if (confirm('Are you sure you want to delete all quiz results for this user?')) {
+                      await Promise.all(results.map(handleDeleteQuizResult));
+                    }
+                  }}
+                  className="mt-4 w-full py-2 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-lg font-bold hover:bg-red-100 transition-colors"
                 >
-                  <Trash2 size={20} />
+                  Delete All Results
                 </button>
               </div>
             ))}
