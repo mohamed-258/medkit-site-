@@ -709,10 +709,7 @@ export default function Admin() {
                       {user.email !== 'mhsn68503@gmail.com' && (
                         <button
                           onClick={() => toggleUserRole(user)}
-                          className={cn(
-                            "px-3 py-1 rounded-lg text-xs font-bold transition-colors",
-                            user.role === 'admin' ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                          )}
+                          className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors"
                         >
                           {user.role === 'admin' ? 'Demote' : 'Promote'}
                         </button>
@@ -726,34 +723,70 @@ export default function Admin() {
         </section>
       ) : activeTab === 'subjects' ? (
         <section>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Subjects & Sections</h2>
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Manage Subjects ({subjects.length})</h2>
+            <button
+              onClick={() => setShowSubjectForm(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
+            >
+              <Plus size={20} />
+              Add Subject
+            </button>
+          </div>
+
           <div className="space-y-4">
             {subjects.map((subject) => {
               const subjectSections = sections.filter(s => s.subjectId === subject.id);
               return (
-                <div key={subject.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div key={subject.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                   <button
                     onClick={() => {
                       const el = document.getElementById(`subject-${subject.id}`);
+                      const icon = document.getElementById(`icon-${subject.id}`);
                       if (el) el.classList.toggle('hidden');
+                      if (icon) icon.classList.toggle('rotate-180');
                     }}
-                    className="w-full p-6 flex items-center justify-between font-bold text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800"
+                    className="w-full p-6 flex items-center justify-between font-bold text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    {subject.nameEn || subject.nameAr}
-                    <ChevronDown size={20} className="text-slate-400" />
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center text-blue-600">
+                        <BookOpen size={20} />
+                      </div>
+                      <span className="text-lg">{subject.nameEn || subject.nameAr}</span>
+                    </div>
+                    <ChevronDown id={`icon-${subject.id}`} size={20} className="text-slate-400 transition-transform duration-200" />
                   </button>
-                  <div id={`subject-${subject.id}`} className="hidden p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-                    {subjectSections.length > 0 ? (
-                      <ul className="space-y-2">
-                        {subjectSections.map(section => (
-                          <li key={section.id} className="text-sm text-slate-600 dark:text-slate-300">
-                            {section.nameEn || section.nameAr}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-slate-500">No sections found.</p>
-                    )}
+                  <div id={`subject-${subject.id}`} className="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+                    <div className="p-6">
+                      {subjectSections.length > 0 ? (
+                        <ul className="space-y-3">
+                          {subjectSections.map(section => (
+                            <li key={section.id} className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                {section.nameEn || section.nameAr}
+                              </span>
+                              <button
+                                onClick={() => handleDelete('sections', section.id)}
+                                className="text-slate-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-slate-500 mb-4">No sections found.</p>
+                      )}
+                      <button
+                        onClick={() => {
+                          setSectionForm({ ...sectionForm, subjectId: subject.id });
+                          setShowSectionForm(true);
+                        }}
+                        className="mt-4 text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
+                      >
+                        <Plus size={16} /> Add Chapter
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
