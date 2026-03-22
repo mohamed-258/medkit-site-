@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -315,54 +315,60 @@ function ProtectedRoute({ children, adminOnly = false }: { children: ReactNode, 
   return <>{children}</>;
 }
 
-export default function App() {
+function AppContent() {
   return (
     <div dir="ltr" className="min-h-screen bg-white dark:bg-slate-900 transition-colors">
-      <AuthProvider>
-        <Router>
-          <Navbar />
-          <main className="min-h-[calc(100vh-64px-300px)]">
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route 
-                path="/dashboard" 
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/quiz/:subjectId" 
-                element={
-                  <ProtectedRoute>
-                    <QuizPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/result/:resultId" 
-                element={
-                  <ProtectedRoute>
-                    <ResultPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/admin" 
-                element={
-                  <ProtectedRoute adminOnly>
-                    <AdminPage />
-                  </ProtectedRoute>
-                } 
-              />
-            </Routes>
-          </main>
-          <Footer />
-        </Router>
-      </AuthProvider>
+      <Navbar />
+      <main className="min-h-[calc(100vh-64px-300px)]">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/quiz/:subjectId" 
+            element={
+              <ProtectedRoute>
+                <QuizPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/result/:resultId" 
+            element={
+              <ProtectedRoute>
+                <ResultPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminPage />
+              </ProtectedRoute>
+            } 
+          />
+        </Routes>
+      </main>
+      <Footer />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </AuthProvider>
   );
 }

@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../App';
 import { Subject, UserProfile, QuizResult } from '../types';
 import { motion } from 'motion/react';
-import { BookOpen, Trophy, Zap, Clock, ArrowLeft, Search, Star, GraduationCap, ChevronLeft, Lock, Unlock } from 'lucide-react';
+import { BookOpen, Trophy, Zap, Clock, ArrowLeft, Search, Star, GraduationCap, ChevronLeft, Lock, Unlock, User, Mail, Calendar, Target, CheckCircle, XCircle, Activity, Award } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -16,10 +16,12 @@ function cn(...inputs: ClassValue[]) {
 
 export default function Dashboard() {
   const { profile, isAdmin } = useAuth();
+  const [activeTab, setActiveTab] = useState<'subjects' | 'profile'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<UserProfile[]>([]);
   const [recentResults, setRecentResults] = useState<QuizResult[]>([]);
+  const [allResults, setAllResults] = useState<QuizResult[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -51,19 +53,19 @@ export default function Dashboard() {
       setLeaderboard(snapshot.docs.map(doc => doc.data() as UserProfile));
     });
 
-    // Fetch recent results for current user
+    // Fetch all results for current user to calculate stats
     let unsubResults: () => void;
     if (profile?.uid) {
       const resultsQuery = query(
         collection(db, 'quizResults'),
-        orderBy('timestamp', 'desc'),
-        limit(3)
+        orderBy('timestamp', 'desc')
       );
       unsubResults = onSnapshot(resultsQuery, (snapshot) => {
-        setRecentResults(snapshot.docs
+        const all = snapshot.docs
           .map(doc => doc.data() as QuizResult)
-          .filter(r => r.userId === profile.uid)
-        );
+          .filter(r => r.userId === profile.uid);
+        setAllResults(all);
+        setRecentResults(all.slice(0, 3));
       });
     }
     
@@ -77,10 +79,16 @@ export default function Dashboard() {
     (s.nameAr && s.nameAr.includes(searchQuery)) || (s.nameEn && s.nameEn.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  const totalQuestions = allResults.reduce((acc, curr) => acc + curr.totalQuestions, 0);
+  const totalCorrect = allResults.reduce((acc, curr) => acc + curr.score, 0);
+  const totalWrong = totalQuestions - totalCorrect;
+  const averageScore = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+  const uniqueSubjects = new Set(allResults.map(r => r.subjectId)).size;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       {/* Welcome Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
         <div>
           <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">
             Welcome, {profile?.displayName?.split(' ')[0]} 👋
@@ -109,6 +117,151 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className="flex items-center gap-2 mb-8 bg-slate-100 dark:bg-slate-800/50 p-1.5 rounded-2xl w-fit">
+        <button
+          onClick={() => setActiveTab('subjects')}
+          className={cn(
+            "px-6 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-2",
+            activeTab === 'subjects' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+          )}
+        >
+          <BookOpen size={18} />
+          Subjects
+        </button>
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={cn(
+            "px-6 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-2",
+            activeTab === 'profile' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+          )}
+        >
+          <User size={18} />
+          My Profile
+        </button>
+      </div>
+
+      {activeTab === 'profile' ? (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          {/* Profile Info Card */}
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 md:p-12 border border-slate-100 dark:border-slate-800 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+            
+            <div className="flex flex-col md:flex-row items-center md:items-start gap-8 relative z-10">
+              <div className="w-32 h-32 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white text-5xl font-black shadow-xl shadow-blue-500/30 shrink-0 border-4 border-white dark:border-slate-800">
+                {(profile?.displayName || profile?.email || '?').charAt(0).toUpperCase()}
+              </div>
+              
+              <div className="flex-1 text-center md:text-left space-y-4">
+                <div>
+                  <h2 className="text-3xl font-black text-slate-900 dark:text-white">{profile?.displayName || 'Student'}</h2>
+                  <p className="text-blue-600 dark:text-blue-400 font-bold flex items-center justify-center md:justify-start gap-2 mt-1">
+                    <Mail size={16} />
+                    {profile?.email}
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 px-5 py-3 rounded-2xl border border-slate-100 dark:border-slate-700">
+                    <Calendar size={20} className="text-slate-400" />
+                    <div className="text-left">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Joined</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">
+                        {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 px-5 py-3 rounded-2xl border border-slate-100 dark:border-slate-700">
+                    <User size={20} className="text-slate-400" />
+                    <div className="text-left">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Date of Birth</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">
+                        {profile?.dateOfBirth || 'Not specified'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 px-5 py-3 rounded-2xl border border-slate-100 dark:border-slate-700">
+                    <Award size={20} className="text-slate-400" />
+                    <div className="text-left">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Role</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white capitalize">
+                        {profile?.role || 'Student'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-12 mb-6">Your Performance</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-3xl border border-blue-100 dark:border-blue-800 flex items-center gap-4">
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-xl flex items-center justify-center text-blue-600 dark:text-blue-400">
+                <Target size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider">Average Score</p>
+                <p className="text-2xl font-black text-blue-600 dark:text-blue-400">{averageScore}%</p>
+              </div>
+            </div>
+            <div className="bg-purple-50 dark:bg-purple-900/20 p-6 rounded-3xl border border-purple-100 dark:border-purple-800 flex items-center gap-4">
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/40 rounded-xl flex items-center justify-center text-purple-600 dark:text-purple-400">
+                <Activity size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-purple-600/70 dark:text-purple-400/70 uppercase tracking-wider">Total Questions</p>
+                <p className="text-2xl font-black text-purple-600 dark:text-purple-400">{totalQuestions}</p>
+              </div>
+            </div>
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-800 flex items-center gap-4">
+              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                <CheckCircle size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-emerald-600/70 dark:text-emerald-400/70 uppercase tracking-wider">Correct Answers</p>
+                <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{totalCorrect}</p>
+              </div>
+            </div>
+            <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-3xl border border-red-100 dark:border-red-800 flex items-center gap-4">
+              <div className="w-12 h-12 bg-red-100 dark:bg-red-900/40 rounded-xl flex items-center justify-center text-red-600 dark:text-red-400">
+                <XCircle size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-red-600/70 dark:text-red-400/70 uppercase tracking-wider">Wrong Answers</p>
+                <p className="text-2xl font-black text-red-600 dark:text-red-400">{totalWrong}</p>
+              </div>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 p-6 rounded-3xl border border-amber-100 dark:border-amber-800 flex items-center gap-4">
+              <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/40 rounded-xl flex items-center justify-center text-amber-600 dark:text-amber-400">
+                <BookOpen size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-amber-600/70 dark:text-amber-400/70 uppercase tracking-wider">Subjects Explored</p>
+                <p className="text-2xl font-black text-amber-600 dark:text-amber-400">{uniqueSubjects}</p>
+              </div>
+            </div>
+            <div className="bg-orange-50 dark:bg-orange-900/20 p-6 rounded-3xl border border-orange-100 dark:border-orange-800 flex items-center gap-4">
+              <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/40 rounded-xl flex items-center justify-center text-orange-600 dark:text-orange-400">
+                <Zap size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-orange-600/70 dark:text-orange-400/70 uppercase tracking-wider">Quizzes Completed</p>
+                <p className="text-2xl font-black text-orange-600 dark:text-orange-400">{allResults.length}</p>
+              </div>
+            </div>
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-3xl border border-yellow-100 dark:border-yellow-800 flex items-center gap-4 lg:col-span-2">
+              <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/40 rounded-xl flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                <Trophy size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-yellow-600/70 dark:text-yellow-400/70 uppercase tracking-wider">Total Points</p>
+                <p className="text-2xl font-black text-yellow-600 dark:text-yellow-400">{profile?.points || 0}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-10">
@@ -301,6 +454,7 @@ export default function Dashboard() {
           </section>
         </div>
       </div>
+      )}
     </div>
   );
 }

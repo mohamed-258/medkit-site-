@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
@@ -18,6 +18,58 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function UserSubjectItem({ subject, sections, isAllowed, onToggleAccess }: { subject: Subject, sections: Section[], isAllowed: boolean, onToggleAccess: () => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm transition-all hover:shadow-md">
+      <div className="flex items-center justify-between p-3 cursor-pointer select-none" onClick={() => setIsOpen(!isOpen)}>
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0",
+            isAllowed ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+          )}>
+            <BookOpen size={16} />
+          </div>
+          <span className="font-bold text-sm text-slate-800 dark:text-slate-200 line-clamp-1">{subject.nameEn || subject.nameAr}</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleAccess();
+            }}
+            className={cn(
+              "p-1.5 rounded-md transition-colors",
+              isAllowed ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20" : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+            )}
+            title={isAllowed ? "Revoke Access" : "Grant Access"}
+          >
+            {isAllowed ? <Unlock size={16} /> : <Lock size={16} />}
+          </button>
+          <ChevronDown size={16} className={cn("text-slate-400 transition-transform duration-200", isOpen && "rotate-180")} />
+        </div>
+      </div>
+      {isOpen && (
+        <div className="bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700 p-3">
+          {sections.length > 0 ? (
+            <ul className="space-y-2">
+              {sections.map(section => (
+                <li key={section.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                  <LayoutGrid size={14} className="text-indigo-400 shrink-0" />
+                  <span className="line-clamp-1">{section.nameEn || section.nameAr}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-500 italic text-center py-2">No sections available</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'quizResults'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -34,6 +86,7 @@ export default function Admin() {
   const [selectedSectionId, setSelectedSectionId] = useState<string>('');
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -678,13 +731,13 @@ export default function Admin() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
-                  <th className="py-4 px-4">User</th>
+                <tr className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                  <th className="py-4 px-4 rounded-tl-xl">User</th>
                   <th className="py-4 px-4">DOB</th>
                   <th className="py-4 px-4">Joined</th>
                   <th className="py-4 px-4">Role</th>
                   <th className="py-4 px-4">Access</th>
-                  <th className="py-4 px-4">Action</th>
+                  <th className="py-4 px-4 rounded-tr-xl">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -692,105 +745,82 @@ export default function Admin() {
                   if (!acc[user.email]) acc[user.email] = user;
                   return acc;
                 }, {} as Record<string, UserProfile>)).map((user) => (
-                  <tr key={user.uid} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="py-4 px-4">
-                      <div className="font-bold text-slate-900 dark:text-white">{user.displayName || 'N/A'}</div>
-                      <div className="text-xs text-slate-500">{user.email}</div>
-                    </td>
-                    <td className="py-4 px-4 text-sm text-slate-600 dark:text-slate-300">{user.dateOfBirth || 'N/A'}</td>
-                    <td className="py-4 px-4 text-sm text-slate-600 dark:text-slate-300">
-                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td className="py-4 px-4 text-sm font-medium capitalize text-slate-700 dark:text-slate-200">{user.role}</td>
-                    <td className="py-4 px-4 text-sm text-slate-600 dark:text-slate-300">
-                      {(user.allowedSubjects || []).length} / {subjects.length}
-                    </td>
-                    <td className="py-4 px-4">
-                      {user.email !== 'mhsn68503@gmail.com' && (
-                        <button
-                          onClick={() => toggleUserRole(user)}
-                          className="text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                        >
-                          {user.role === 'admin' ? 'Demote' : 'Promote'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                  <React.Fragment key={user.uid}>
+                    <tr 
+                      onClick={() => setExpandedUserId(expandedUserId === user.uid ? null : user.uid)}
+                      className="hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-colors cursor-pointer group"
+                    >
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-md shrink-0">
+                            {(user.displayName || user.email || '?').charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 dark:text-white text-base truncate flex items-center gap-2">
+                              {user.displayName || 'N/A'}
+                              {expandedUserId === user.uid ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                            </div>
+                            <div className="text-xs text-blue-600 dark:text-blue-400 font-medium truncate">{user.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-sm font-medium text-slate-700 dark:text-slate-300">{user.dateOfBirth || 'N/A'}</td>
+                      <td className="py-4 px-4 text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className={cn(
+                          "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold",
+                          user.role === 'admin' ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        )}>
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                        {(user.allowedSubjects || []).length} / {subjects.length}
+                      </td>
+                      <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                        {user.email !== 'mhsn68503@gmail.com' && (
+                          <button
+                            onClick={() => toggleUserRole(user)}
+                            className="text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg w-fit"
+                          >
+                            <RefreshCw size={12} />
+                            {user.role === 'admin' ? 'Demote' : 'Promote'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {expandedUserId === user.uid && (
+                      <tr className="bg-slate-50/50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800">
+                        <td colSpan={6} className="p-6">
+                          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+                            <h4 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                              <Lock size={18} className="text-slate-400" />
+                              Manage Access for {user.displayName || user.email}
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                              {subjects.map(subject => {
+                                const isAllowed = (user.allowedSubjects || []).includes(subject.id);
+                                return (
+                                  <UserSubjectItem 
+                                    key={subject.id} 
+                                    subject={subject} 
+                                    sections={sections.filter(s => s.subjectId === subject.id)}
+                                    isAllowed={isAllowed}
+                                    onToggleAccess={() => toggleSubjectAccess(user, subject.id)}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
-          </div>
-        </section>
-      ) : activeTab === 'subjects' ? (
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Manage Subjects ({subjects.length})</h2>
-            <button
-              onClick={() => setShowSubjectForm(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
-            >
-              <Plus size={20} />
-              Add Subject
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            {subjects.map((subject) => {
-              const subjectSections = sections.filter(s => s.subjectId === subject.id);
-              return (
-                <div key={subject.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <button
-                    onClick={() => {
-                      const el = document.getElementById(`subject-${subject.id}`);
-                      const icon = document.getElementById(`icon-${subject.id}`);
-                      if (el) el.classList.toggle('hidden');
-                      if (icon) icon.classList.toggle('rotate-180');
-                    }}
-                    className="w-full p-6 flex items-center justify-between font-bold text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center text-blue-600">
-                        <BookOpen size={20} />
-                      </div>
-                      <span className="text-lg">{subject.nameEn || subject.nameAr}</span>
-                    </div>
-                    <ChevronDown id={`icon-${subject.id}`} size={20} className="text-slate-400 transition-transform duration-200" />
-                  </button>
-                  <div id={`subject-${subject.id}`} className="hidden border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
-                    <div className="p-6">
-                      {subjectSections.length > 0 ? (
-                        <ul className="space-y-3">
-                          {subjectSections.map(section => (
-                            <li key={section.id} className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                                {section.nameEn || section.nameAr}
-                              </span>
-                              <button
-                                onClick={() => handleDelete('sections', section.id)}
-                                className="text-slate-400 hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-slate-500 mb-4">No sections found.</p>
-                      )}
-                      <button
-                        onClick={() => {
-                          setSectionForm({ ...sectionForm, subjectId: subject.id });
-                          setShowSectionForm(true);
-                        }}
-                        className="mt-4 text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
-                      >
-                        <Plus size={16} /> Add Chapter
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </section>
       ) : activeTab === 'quizResults' ? (
