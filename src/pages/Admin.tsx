@@ -255,6 +255,17 @@ export default function Admin() {
     };
   }, []);
 
+  const toggleUserRole = async (user: UserProfile) => {
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const newRole = user.role === 'admin' ? 'student' : 'admin';
+      await updateDoc(userRef, { role: newRole });
+      setMessage({ text: `User role updated to ${newRole} successfully`, type: 'success' });
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'users/' + user.uid);
+    }
+  };
+
   const toggleSubjectAccess = async (user: UserProfile, subjectId: string) => {
     try {
       const userRef = doc(db, 'users', user.uid);
@@ -682,12 +693,27 @@ export default function Admin() {
                       </p>
                     )}
                   </div>
-                  <button
-                    onClick={() => handleDelete('users', user.uid)}
-                    className="text-red-500 hover:text-red-700 p-2"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {user.email !== 'mhsn68503@gmail.com' && (
+                      <button
+                        onClick={() => toggleUserRole(user)}
+                        className={cn(
+                          "px-3 py-1 rounded-lg text-xs font-bold transition-colors",
+                          user.role === 'admin' ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                        )}
+                      >
+                        {user.role === 'admin' ? 'Demote to Student' : 'Promote to Admin'}
+                      </button>
+                    )}
+                    {user.email === 'mhsn68503@gmail.com' && (
+                      <button
+                        onClick={() => handleDelete('users', user.uid)}
+                        className="text-red-500 hover:text-red-700 p-2"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {subjects.map(subject => (
