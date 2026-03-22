@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Subject, Section, Question, UserProfile } from '../types';
+import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw } from 'lucide-react';
 import * as mammoth from 'mammoth';
@@ -19,11 +19,12 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users'>('subjects');
+  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'quizResults'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
@@ -241,11 +242,16 @@ export default function Admin() {
       setUsers(snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
     });
 
+    const unsubQuizResults = onSnapshot(collection(db, 'quizResults'), (snapshot) => {
+      setQuizResults(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as QuizResult)));
+    });
+
     return () => {
       unsubSubjects();
       unsubSections();
       unsubQuestions();
       unsubUsers();
+      unsubQuizResults();
     };
   }, []);
 
@@ -350,6 +356,36 @@ export default function Admin() {
       setMessage({ text: 'Deleted successfully', type: 'success' });
     } catch (err) {
       handleFirestoreError(err, 'delete', coll);
+    }
+  };
+
+  const handleDeleteQuizResult = async (result: QuizResult) => {
+    if (!confirm('Are you sure you want to delete this quiz result? This will also remove the points from the user.')) return;
+    try {
+      const userRef = doc(db, 'users', result.userId);
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as UserProfile;
+        const pointsToSubtract = result.score * 10; // Assuming 10 points per correct answer as per Quiz.tsx logic
+        
+        const newPoints = Math.max(0, (userData.points || 0) - pointsToSubtract);
+        const newCompletedQuizzes = Math.max(0, (userData.completedQuizzes || 0) - 1);
+        
+        const sectionPoints = userData.sectionPoints || {};
+        const sectionKey = `${result.subjectId}_${result.sectionId || 'all'}`;
+        const newSectionPoints = Math.max(0, (sectionPoints[sectionKey] || 0) - pointsToSubtract);
+        
+        await updateDoc(userRef, {
+          points: newPoints,
+          completedQuizzes: newCompletedQuizzes,
+          sectionPoints: { ...sectionPoints, [sectionKey]: newSectionPoints }
+        });
+      }
+      
+      await deleteDoc(doc(db, 'quizResults', result.id));
+      setMessage({ text: 'Quiz result deleted and points updated successfully', type: 'success' });
+    } catch (err) {
+      handleFirestoreError(err, 'delete', 'quizResults');
     }
   };
 
@@ -476,6 +512,15 @@ export default function Admin() {
               )}
             >
               Users
+            </button>
+            <button
+              onClick={() => setActiveTab('quizResults')}
+              className={cn(
+                "px-6 py-2 rounded-xl font-bold text-sm transition-all",
+                activeTab === 'quizResults' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
+              )}
+            >
+              Quiz Results
             </button>
           </div>
         </div>
@@ -657,6 +702,31 @@ export default function Admin() {
                     </div>
                   ))}
                 </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : activeTab === 'quizResults' ? (
+        <section>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Quiz Results</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {quizResults.map((result) => (
+              <div key={result.id} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between group">
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white">
+                    {users.find(u => u.uid === result.userId)?.displayName || 'Unknown User'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {subjects.find(s => s.id === result.subjectId)?.nameEn || 'Unknown Subject'}
+                  </p>
+                  <p className="text-xs text-slate-500">Score: {result.score} / {result.totalQuestions}</p>
+                </div>
+                <button
+                  onClick={() => handleDeleteQuizResult(result)}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                >
+                  <Trash2 size={20} />
+                </button>
               </div>
             ))}
           </div>
