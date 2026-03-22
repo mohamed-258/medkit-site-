@@ -592,14 +592,14 @@ export default function Quiz() {
         </div>
 
         {/* Sidebar - Question Navigation Grid */}
-        <div className="hidden lg:block">
-          <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 p-6 sticky top-24">
+        <div className="block">
+          <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 p-6">
             <div className="flex items-center gap-2 mb-6">
               <LayoutGrid size={20} className="text-blue-600" />
               <h3 className="font-bold text-slate-900 dark:text-white">Question List</h3>
             </div>
             
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-5 gap-2">
               {questions.map((_, i) => (
                 <button
                   key={i}
