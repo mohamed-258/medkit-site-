@@ -1,7 +1,10 @@
 import { useLocation, Link, useParams } from 'react-router-dom';
-import { Trophy, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Star, Zap, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState } from 'react';
+import { Trophy, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Star, Zap, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { QuizResult } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -11,19 +14,62 @@ function cn(...inputs: ClassValue[]) {
 
 export default function Result() {
   const { state } = useLocation();
-  const { resultId } = useParams();
+  const { resultId } = useParams<{ resultId: string }>();
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [loading, setLoading] = useState(!state?.result);
+  const [fetchedResult, setFetchedResult] = useState<QuizResult | null>(state?.result || null);
 
-  if (!state || !state.result) {
+  useEffect(() => {
+    const fetchResult = async () => {
+      if (state?.result || !resultId) return;
+      
+      try {
+        const docRef = doc(db, 'quizResults', resultId);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          setFetchedResult(docSnap.data() as QuizResult);
+        }
+      } catch (err) {
+        console.error("Error fetching result:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchResult();
+  }, [resultId, state?.result]);
+
+  if (loading) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-20 text-center">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Result Not Found</h2>
-        <Link to="/dashboard" className="text-blue-600 font-bold hover:underline">Back to Dashboard</Link>
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900">
+        <div className="text-center">
+          <Loader2 size={48} className="text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-slate-500 font-bold">Loading Result...</p>
+        </div>
       </div>
     );
   }
 
-  const { result, questions, selectedAnswers, pointsEarned } = state;
+  if (!fetchedResult) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-20 text-center">
+        <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-3xl flex items-center justify-center text-slate-400 mx-auto mb-6">
+          <XCircle size={40} />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Result Not Found</h2>
+        <p className="text-slate-500 mb-8">We couldn't find the details for this quiz attempt.</p>
+        <Link to="/dashboard" className="inline-flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-xl font-bold">
+          <ArrowLeft size={20} />
+          Back to Dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  const result = fetchedResult;
+  const questions = result.questions || state?.questions || [];
+  const selectedAnswers = result.selectedAnswers || state?.selectedAnswers || {};
   const percentage = Math.round((result.score / result.totalQuestions) * 100);
 
   return (

@@ -55,14 +55,16 @@ export default function Dashboard() {
 
     const resultsQuery = query(
       collection(db, 'quizResults'),
-      orderBy('timestamp', 'desc')
+      where('userId', '==', profile.uid)
     );
     const unsubResults = onSnapshot(resultsQuery, (snapshot) => {
       const all = snapshot.docs
         .map(doc => ({ ...doc.data(), id: doc.id } as QuizResult))
-        .filter(r => r.userId === profile.uid);
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setAllResults(all);
       setRecentResults(all.slice(0, 5));
+    }, (error) => {
+      console.error("Error fetching results:", error);
     });
 
     return () => {
