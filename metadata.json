@@ -1,5 +1,5 @@
 {
-  "name": "Medkit",
-  "description": "An online platform for medical students at Minya University to practice and solve exam questions across various subjects like Anatomy and Physiology.",
+  "name": "MedKit Dashboard",
+  "description": "A modern, clean medical question bank platform for students with real-time analytics, gamification, and subject-specific quizzes.",
   "requestFramePermissions": []
 }

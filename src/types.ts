@@ -49,4 +49,6 @@ export interface QuizResult {
   score: number;
   totalQuestions: number;
   timestamp: string;
+  questions?: Question[];
+  selectedAnswers?: Record<number, number>;
 }

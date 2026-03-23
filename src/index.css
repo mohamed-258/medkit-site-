@@ -1,6 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    @apply font-sans antialiased bg-[#f8fafc] text-slate-900 dark:bg-slate-950 dark:text-slate-50;
+  }
+}
 
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {
@@ -15,5 +28,17 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-400 dark:bg-slate-500;
+  }
+
+  .soft-glow {
+    position: relative;
+  }
+  .soft-glow::before {
+    content: '';
+    position: absolute;
+    inset: -20px;
+    background: radial-gradient(circle at center, var(--glow-color, rgba(59, 130, 246, 0.05)), transparent 70%);
+    z-index: -1;
+    pointer-events: none;
   }
 }

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
-import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -22,47 +21,60 @@ function UserSubjectItem({ subject, sections, isAllowed, onToggleAccess }: { sub
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm transition-all hover:shadow-md">
-      <div className="flex items-center justify-between p-3 cursor-pointer select-none" onClick={() => setIsOpen(!isOpen)}>
-        <div className="flex items-center gap-3">
+    <div className={cn(
+      "group bg-white dark:bg-slate-800 border rounded-[2rem] overflow-hidden transition-all duration-300",
+      isAllowed ? "border-emerald-100 dark:border-emerald-900/30 shadow-sm" : "border-slate-100 dark:border-slate-700 opacity-70 hover:opacity-100"
+    )}>
+      <div className="flex items-center justify-between p-4 cursor-pointer select-none" onClick={() => setIsOpen(!isOpen)}>
+        <div className="flex items-center gap-4">
           <div className={cn(
-            "w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0",
-            isAllowed ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+            "w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg transition-all duration-300",
+            isAllowed ? "bg-emerald-500 shadow-emerald-500/20" : "bg-slate-200 dark:bg-slate-700 text-slate-400"
           )}>
-            <BookOpen size={16} />
+            <BookOpen size={18} />
           </div>
-          <span className="font-bold text-sm text-slate-800 dark:text-slate-200 line-clamp-1">{subject.nameEn || subject.nameAr}</span>
+          <span className="font-black text-sm text-slate-900 dark:text-slate-100 line-clamp-1">{subject.nameEn || subject.nameAr}</span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2">
           <button
             onClick={(e) => {
               e.stopPropagation();
               onToggleAccess();
             }}
             className={cn(
-              "p-1.5 rounded-md transition-colors",
-              isAllowed ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20" : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+              "p-2 rounded-xl transition-all duration-300",
+              isAllowed 
+                ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400" 
+                : "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
             )}
             title={isAllowed ? "Revoke Access" : "Grant Access"}
           >
             {isAllowed ? <Unlock size={16} /> : <Lock size={16} />}
           </button>
-          <ChevronDown size={16} className={cn("text-slate-400 transition-transform duration-200", isOpen && "rotate-180")} />
+          <div className={cn(
+            "p-1.5 rounded-lg text-slate-300 group-hover:text-slate-400 transition-all duration-300",
+            isOpen && "rotate-180 text-blue-500"
+          )}>
+            <ChevronDown size={16} />
+          </div>
         </div>
       </div>
       {isOpen && (
-        <div className="bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700 p-3">
+        <div className="bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-50 dark:border-slate-700/50 p-4 animate-in slide-in-from-top-2 duration-300">
           {sections.length > 0 ? (
-            <ul className="space-y-2">
+            <div className="grid grid-cols-1 gap-2">
               {sections.map(section => (
-                <li key={section.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
-                  <LayoutGrid size={14} className="text-indigo-400 shrink-0" />
+                <div key={section.id} className="flex items-center gap-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
                   <span className="line-clamp-1">{section.nameEn || section.nameAr}</span>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : (
-            <p className="text-xs text-slate-500 italic text-center py-2">No sections available</p>
+            <div className="flex flex-col items-center justify-center py-4 text-slate-400">
+              <AlertCircle size={20} className="mb-2 opacity-20" />
+              <p className="text-[10px] font-black uppercase tracking-wider">No sections found</p>
+            </div>
           )}
         </div>
       )}
@@ -87,6 +99,10 @@ export default function Admin() {
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [editingSection, setEditingSection] = useState<Section | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -359,13 +375,19 @@ export default function Admin() {
     }
     
     try {
-      const docRef = await addDoc(collection(db, 'subjects'), subjectForm);
-      await updateDoc(docRef, { id: docRef.id });
+      if (editingSubject) {
+        await updateDoc(doc(db, 'subjects', editingSubject.id), subjectForm);
+        setMessage({ text: 'Subject updated successfully', type: 'success' });
+      } else {
+        const docRef = await addDoc(collection(db, 'subjects'), subjectForm);
+        await updateDoc(docRef, { id: docRef.id });
+        setMessage({ text: 'Subject added successfully', type: 'success' });
+      }
       setSubjectForm({ nameAr: '', nameEn: '', icon: 'BookOpen' });
+      setEditingSubject(null);
       setShowSubjectForm(false);
-      setMessage({ text: 'Subject added successfully', type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'create', 'subjects');
+      handleFirestoreError(err, editingSubject ? 'update' : 'create', 'subjects');
     }
   };
 
@@ -377,13 +399,19 @@ export default function Admin() {
     }
     
     try {
-      const docRef = await addDoc(collection(db, 'sections'), sectionForm);
-      await updateDoc(docRef, { id: docRef.id });
+      if (editingSection) {
+        await updateDoc(doc(db, 'sections', editingSection.id), sectionForm);
+        setMessage({ text: 'Section updated successfully', type: 'success' });
+      } else {
+        const docRef = await addDoc(collection(db, 'sections'), sectionForm);
+        await updateDoc(docRef, { id: docRef.id });
+        setMessage({ text: 'Section added successfully', type: 'success' });
+      }
       setSectionForm({ subjectId: sectionForm.subjectId, nameAr: '', nameEn: '' });
+      setEditingSection(null);
       setShowSectionForm(false);
-      setMessage({ text: 'Section added successfully', type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'create', 'sections');
+      handleFirestoreError(err, editingSection ? 'update' : 'create', 'sections');
     }
   };
 
@@ -395,8 +423,14 @@ export default function Admin() {
     }
 
     try {
-      const docRef = await addDoc(collection(db, 'questions'), { ...questionForm, createdAt: new Date().toISOString() });
-      await updateDoc(docRef, { id: docRef.id });
+      if (editingQuestion) {
+        await updateDoc(doc(db, 'questions', editingQuestion.id), { ...questionForm });
+        setMessage({ text: 'Question updated successfully', type: 'success' });
+      } else {
+        const docRef = await addDoc(collection(db, 'questions'), { ...questionForm, createdAt: new Date().toISOString() });
+        await updateDoc(docRef, { id: docRef.id });
+        setMessage({ text: 'Question added successfully', type: 'success' });
+      }
       setQuestionForm({
         subjectId: questionForm.subjectId,
         sectionId: questionForm.sectionId,
@@ -406,18 +440,44 @@ export default function Admin() {
         explanation: '',
         difficulty: 'medium'
       });
+      setEditingQuestion(null);
       setShowQuestionForm(false);
-      setMessage({ text: 'Question added successfully', type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'create', 'questions');
+      handleFirestoreError(err, editingQuestion ? 'update' : 'create', 'questions');
     }
   };
 
   const handleDelete = async (coll: string, id: string) => {
-    if (!confirm('Are you sure you want to delete?')) return;
+    if (!confirm('Are you sure you want to delete? This will also delete all associated sections and questions.')) return;
     try {
-      await deleteDoc(doc(db, coll, id));
-      setMessage({ text: 'Deleted successfully', type: 'success' });
+      const batch = writeBatch(db);
+      
+      // Delete the main document
+      batch.delete(doc(db, coll, id));
+
+      // If deleting subject, delete associated sections and questions
+      if (coll === 'subjects') {
+        // Delete sections
+        const sSnap = await getDocs(query(collection(db, 'sections'), where('subjectId', '==', id)));
+        sSnap.docs.forEach(sDoc => {
+          batch.delete(sDoc.ref);
+        });
+        // Delete questions
+        const qSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', id)));
+        qSnap.docs.forEach(qDoc => {
+          batch.delete(qDoc.ref);
+        });
+      }
+      // If deleting section, delete associated questions
+      else if (coll === 'sections') {
+        const qSnap = await getDocs(query(collection(db, 'questions'), where('sectionId', '==', id)));
+        qSnap.docs.forEach(qDoc => {
+          batch.delete(qDoc.ref);
+        });
+      }
+
+      await batch.commit();
+      setMessage({ text: 'Deleted successfully along with associated content', type: 'success' });
     } catch (err) {
       handleFirestoreError(err, 'delete', coll);
     }
@@ -533,91 +593,84 @@ export default function Admin() {
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      <div className="flex items-center justify-between mb-10">
+    <div className="max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">Admin Dashboard</h1>
-          <p className="text-slate-500 dark:text-slate-400">Manage subjects, questions, and exams.</p>
+          <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Admin Dashboard</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium">Manage your medical question bank ecosystem.</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
-            <button
-              onClick={() => setActiveTab('subjects')}
-              className={cn(
-                "px-6 py-2 rounded-xl font-bold text-sm transition-all",
-                activeTab === 'subjects' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
-              )}
-            >
-              Subjects
-            </button>
-            <button
-              onClick={() => setActiveTab('sections')}
-              className={cn(
-                "px-6 py-2 rounded-xl font-bold text-sm transition-all",
-                activeTab === 'sections' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
-              )}
-            >
-              Sections
-            </button>
-            <button
-              onClick={() => setActiveTab('questions')}
-              className={cn(
-                "px-6 py-2 rounded-xl font-bold text-sm transition-all",
-                activeTab === 'questions' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
-              )}
-            >
-              Questions
-            </button>
-            <button
-              onClick={() => setActiveTab('users')}
-              className={cn(
-                "px-6 py-2 rounded-xl font-bold text-sm transition-all",
-                activeTab === 'users' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
-              )}
-            >
-              Users
-            </button>
-            <button
-              onClick={() => setActiveTab('quizResults')}
-              className={cn(
-                "px-6 py-2 rounded-xl font-bold text-sm transition-all",
-                activeTab === 'quizResults' ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500"
-              )}
-            >
-              Quiz Results
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Visual Guide for the User */}
-      <div className="mb-12 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/50 rounded-[2rem] p-8">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/20">
-            <HelpCircle size={24} />
-          </div>
-          <div>
-            <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">How to add questions?</h2>
-            <p className="text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
-              You can add questions manually or upload them from a file. Follow these steps:
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-blue-600 shadow-sm">1</div>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Select a subject from the dropdown.</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-blue-600 shadow-sm">2</div>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Upload a PDF or Word file with questions.</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center font-bold text-blue-600 shadow-sm">3</div>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Questions will appear in the list below.</span>
+        
+        <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3 px-3">
+            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/20">
+              {auth.currentUser?.displayName?.charAt(0) || 'A'}
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{auth.currentUser?.displayName || 'Admin'}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Super Admin</p>
+                <div className="w-1 h-1 rounded-full bg-slate-300" />
+                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">{users.find(u => u.uid === auth.currentUser?.uid)?.points || 0} Points</p>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+        <div className="mb-10 overflow-x-auto pb-2">
+          <div className="flex bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 w-fit">
+            {[
+              { id: 'subjects', label: 'Subjects' },
+              { id: 'sections', label: 'Sections' },
+              { id: 'questions', label: 'Questions' },
+              { id: 'users', label: 'Users' },
+              { id: 'quizResults', label: 'Quiz Results' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={cn(
+                  "px-8 py-3 rounded-xl font-black text-sm transition-all duration-300 whitespace-nowrap",
+                  activeTab === tab.id 
+                    ? "bg-blue-600 text-white shadow-xl shadow-blue-500/25 scale-[1.02]" 
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+      {/* Visual Guide for the User */}
+        <div className="mb-12 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2rem] p-8 shadow-sm relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -mr-32 -mt-32 blur-3xl transition-all group-hover:bg-blue-500/10" />
+          <div className="flex flex-col lg:flex-row items-start lg:items-center gap-8 relative z-10">
+            <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 shrink-0 shadow-inner">
+              <HelpCircle size={32} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-3">How to add questions?</h2>
+              <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium max-w-2xl">
+                Streamline your content creation process. You can manually input questions or use our AI-powered file extractor.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {[
+                  { step: 1, text: "Select a subject from the dropdown menu below." },
+                  { step: 2, text: "Upload a PDF or Word file with your questions." },
+                  { step: 3, text: "Review and manage your questions in the bank." }
+                ].map((item) => (
+                  <div key={item.step} className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 transition-transform hover:-translate-y-1">
+                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-blue-500/20 shrink-0">
+                      {item.step}
+                    </div>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300 leading-snug">{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
 
       {message && (
         <div className={cn(
@@ -631,12 +684,12 @@ export default function Admin() {
       )}
 
       {activeTab === 'subjects' ? (
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Subject List</h2>
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white">Subject Repository</h2>
             <button
               onClick={() => setShowSubjectForm(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all"
+              className="flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full font-black text-sm shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-1 transition-all active:scale-95"
             >
               <Plus size={20} />
               Add New Subject
@@ -644,45 +697,75 @@ export default function Admin() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {subjects.map((subject) => (
-              <div key={subject.id} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between group">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center text-blue-600">
-                    <BookOpen size={24} />
+            {subjects.map((subject) => {
+              const subjectSections = sections.filter(s => s.subjectId === subject.id);
+              const subjectQuestions = questions.filter(q => q.subjectId === subject.id);
+              
+              return (
+                <div key={subject.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col group hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-none hover:-translate-y-1 transition-all duration-300">
+                  <div className="flex items-start justify-between mb-6">
+                    <div className="flex items-center gap-5">
+                      <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform duration-300 shadow-inner">
+                        <BookOpen size={28} />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900 dark:text-white text-lg">{subject.nameEn || subject.nameAr}</h3>
+                        <p className="text-sm font-bold text-slate-400 mt-0.5">{subject.nameAr}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setEditingSubject(subject);
+                          setSubjectForm({ nameAr: subject.nameAr, nameEn: subject.nameEn, icon: subject.icon || 'BookOpen' });
+                          setShowSubjectForm(true);
+                        }}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => toggleLock(subject)}
+                        className={cn(
+                          "p-2 rounded-xl transition-all",
+                          subject.isLocked 
+                            ? "bg-amber-50 text-amber-500 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400" 
+                            : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                        )}
+                      >
+                        {subject.isLocked ? <Lock size={18} /> : <Unlock size={18} />}
+                      </button>
+                      <button
+                        onClick={() => handleDelete('subjects', subject.id)}
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-900 dark:text-white">{subject.nameEn || subject.nameAr}</h3>
-                    <p className="text-xs text-slate-500">{subject.nameAr}</p>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-auto">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100/50 dark:border-slate-700/50">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Sections</p>
+                      <p className="text-xl font-black text-slate-900 dark:text-white">{subjectSections.length}</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100/50 dark:border-slate-700/50">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Questions</p>
+                      <p className="text-xl font-black text-slate-900 dark:text-white">{subjectQuestions.length}</p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => toggleLock(subject)}
-                    className={cn(
-                      "p-2 rounded-lg transition-colors",
-                      subject.isLocked ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20" : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                    )}
-                  >
-                    {subject.isLocked ? <Lock size={20} /> : <Unlock size={20} />}
-                  </button>
-                  <button
-                    onClick={() => handleDelete('subjects', subject.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={20} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : activeTab === 'sections' ? (
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Section List</h2>
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white">Curriculum Sections</h2>
             <button
               onClick={() => setShowSectionForm(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all"
+              className="flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full font-black text-sm shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-1 transition-all active:scale-95"
             >
               <Plus size={20} />
               Add New Section
@@ -690,27 +773,52 @@ export default function Admin() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sections.map((section) => (
-              <div key={section.id} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between group">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl flex items-center justify-center text-indigo-600">
-                    <LayoutGrid size={24} />
+            {sections.map((section) => {
+              const sectionQuestions = questions.filter(q => q.sectionId === section.id);
+              
+              return (
+                <div key={section.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col group hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-none hover:-translate-y-1 transition-all duration-300">
+                  <div className="flex items-start justify-between mb-6">
+                    <div className="flex items-center gap-5">
+                      <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform duration-300 shadow-inner">
+                        <LayoutGrid size={28} />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900 dark:text-white text-lg">{section.nameEn || section.nameAr}</h3>
+                        <p className="text-sm font-bold text-indigo-400 mt-0.5">
+                          {subjects.find(s => s.id === section.subjectId)?.nameEn || 'Unknown Subject'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setEditingSection(section);
+                          setSectionForm({ subjectId: section.subjectId, nameAr: section.nameAr, nameEn: section.nameEn });
+                          setShowSectionForm(true);
+                        }}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete('sections', section.id)}
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-900 dark:text-white">{section.nameEn || section.nameAr}</h3>
-                    <p className="text-xs text-slate-500">
-                      {subjects.find(s => s.id === section.subjectId)?.nameEn || 'Unknown Subject'}
-                    </p>
+                  
+                  <div className="mt-auto">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100/50 dark:border-slate-700/50">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Questions</p>
+                      <p className="text-xl font-black text-slate-900 dark:text-white">{sectionQuestions.length}</p>
+                    </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDelete('sections', section.id)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                >
-                  <Trash2 size={20} />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : activeTab === 'users' ? (
@@ -728,144 +836,219 @@ export default function Admin() {
               Refresh
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-                  <th className="py-4 px-4 rounded-tl-xl">User</th>
-                  <th className="py-4 px-4">DOB</th>
-                  <th className="py-4 px-4">Joined</th>
-                  <th className="py-4 px-4">Role</th>
-                  <th className="py-4 px-4">Access</th>
-                  <th className="py-4 px-4 rounded-tr-xl">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {Object.values(users.reduce((acc, user) => {
-                  if (!acc[user.email]) acc[user.email] = user;
-                  return acc;
-                }, {} as Record<string, UserProfile>)).map((user) => (
-                  <React.Fragment key={user.uid}>
-                    <tr 
-                      onClick={() => setExpandedUserId(expandedUserId === user.uid ? null : user.uid)}
-                      className="hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-colors cursor-pointer group"
-                    >
-                      <td className="py-4 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-md shrink-0">
-                            {(user.displayName || user.email || '?').charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-900 dark:text-white text-base truncate flex items-center gap-2">
-                              {user.displayName || 'N/A'}
-                              {expandedUserId === user.uid ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />}
+          <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-[0.1em] font-black border-b border-slate-50 dark:border-slate-800">
+                    <th className="py-5 px-6">User Details</th>
+                    <th className="py-5 px-6">Points</th>
+                    <th className="py-5 px-6">Birth Date</th>
+                    <th className="py-5 px-6">Joined On</th>
+                    <th className="py-5 px-6">Account Role</th>
+                    <th className="py-5 px-6">Subject Access</th>
+                    <th className="py-5 px-6 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                  {Object.values(users.reduce((acc, user) => {
+                    if (!acc[user.email]) acc[user.email] = user;
+                    return acc;
+                  }, {} as Record<string, UserProfile>)).map((user) => (
+                    <React.Fragment key={user.uid}>
+                      <tr 
+                        onClick={() => setExpandedUserId(expandedUserId === user.uid ? null : user.uid)}
+                        className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-all cursor-pointer group"
+                      >
+                        <td className="py-5 px-6">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 shrink-0">
+                              {(user.displayName || user.email || '?').charAt(0).toUpperCase()}
                             </div>
-                            <div className="text-xs text-blue-600 dark:text-blue-400 font-medium truncate">{user.email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 text-sm font-medium text-slate-700 dark:text-slate-300">{user.dateOfBirth || 'N/A'}</td>
-                      <td className="py-4 px-4 text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className={cn(
-                          "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold",
-                          user.role === 'admin' ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                        )}>
-                          {user.role}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                        {(user.allowedSubjects || []).length} / {subjects.length}
-                      </td>
-                      <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
-                        {user.email !== 'mhsn68503@gmail.com' && (
-                          <button
-                            onClick={() => toggleUserRole(user)}
-                            className="text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg w-fit"
-                          >
-                            <RefreshCw size={12} />
-                            {user.role === 'admin' ? 'Demote' : 'Promote'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                    {expandedUserId === user.uid && (
-                      <tr className="bg-slate-50/50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800">
-                        <td colSpan={6} className="p-6">
-                          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
-                            <h4 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                              <Lock size={18} className="text-slate-400" />
-                              Manage Access for {user.displayName || user.email}
-                            </h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                              {subjects.map(subject => {
-                                const isAllowed = (user.allowedSubjects || []).includes(subject.id);
-                                return (
-                                  <UserSubjectItem 
-                                    key={subject.id} 
-                                    subject={subject} 
-                                    sections={sections.filter(s => s.subjectId === subject.id)}
-                                    isAllowed={isAllowed}
-                                    onToggleAccess={() => toggleSubjectAccess(user, subject.id)}
-                                  />
-                                );
-                              })}
+                            <div className="min-w-0">
+                              <div className="font-bold text-slate-900 dark:text-white text-base truncate flex items-center gap-2">
+                                {user.displayName || 'N/A'}
+                                {expandedUserId === user.uid ? (
+                                  <ChevronUp size={14} className="text-blue-500" />
+                                ) : (
+                                  <ChevronDown size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-400 dark:text-slate-500 font-medium truncate">{user.email}</div>
                             </div>
                           </div>
                         </td>
+                        <td className="py-5 px-6">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <span className="text-sm font-black text-slate-900 dark:text-white">{user.points || 0}</span>
+                          </div>
+                        </td>
+                        <td className="py-5 px-6 text-sm font-semibold text-slate-600 dark:text-slate-400">{user.dateOfBirth || '—'}</td>
+                        <td className="py-5 px-6 text-sm font-semibold text-slate-600 dark:text-slate-400">
+                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                        </td>
+                        <td className="py-5 px-6">
+                          <span className={cn(
+                            "inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider",
+                            user.role === 'admin' 
+                              ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" 
+                              : "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                          )}>
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="py-5 px-6">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden max-w-[60px]">
+                              <div 
+                                className="h-full bg-emerald-500 rounded-full" 
+                                style={{ width: `${Math.min(100, ((user.allowedSubjects || []).length / subjects.length) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-bold text-slate-900 dark:text-white">
+                              {(user.allowedSubjects || []).length} / {subjects.length}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-5 px-6 text-right" onClick={(e) => e.stopPropagation()}>
+                          {user.email !== 'mhsn68503@gmail.com' && (
+                            <button
+                              onClick={() => toggleUserRole(user)}
+                              className={cn(
+                                "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm",
+                                user.role === 'admin' 
+                                  ? "bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400" 
+                                  : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400"
+                              )}
+                            >
+                              <RefreshCw size={12} />
+                              {user.role === 'admin' ? 'Demote' : 'Promote'}
+                            </button>
+                          )}
+                        </td>
                       </tr>
-                    )}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
+                      {expandedUserId === user.uid && (
+                        <tr className="bg-slate-50/30 dark:bg-slate-800/10">
+                          <td colSpan={7} className="p-8">
+                            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-8 shadow-xl animate-in slide-in-from-top-2 duration-300">
+                              <div className="flex items-center justify-between mb-8">
+                                <div>
+                                  <h4 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                    <Lock size={20} className="text-blue-600" />
+                                    Subject Access Control
+                                  </h4>
+                                  <p className="text-sm text-slate-400 mt-1">Manage which subjects {user.displayName || 'this user'} can access.</p>
+                                </div>
+                                <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                                  <span className="text-xs font-black text-blue-600 uppercase tracking-wider">
+                                    {(user.allowedSubjects || []).length} Subjects Allowed
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[500px] overflow-y-auto pr-4 custom-scrollbar">
+                                {subjects.map(subject => {
+                                  const isAllowed = (user.allowedSubjects || []).includes(subject.id);
+                                  return (
+                                    <UserSubjectItem 
+                                      key={subject.id} 
+                                      subject={subject} 
+                                      sections={sections.filter(s => s.subjectId === subject.id)}
+                                      isAllowed={isAllowed}
+                                      onToggleAccess={() => toggleSubjectAccess(user, subject.id)}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
+
         </section>
       ) : activeTab === 'quizResults' ? (
-        <section>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Quiz Results (Grouped by User)</h2>
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white">Quiz Analytics</h2>
+              <p className="text-sm text-slate-400 mt-1">Review student performance across all subjects.</p>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Object.entries(quizResults.reduce((acc, result) => {
               if (!acc[result.userId]) acc[result.userId] = [];
               acc[result.userId].push(result);
               return acc;
-            }, {} as Record<string, QuizResult[]>)).map(([userId, results]) => (
-              <div key={userId} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-4">
-                <h3 className="font-bold text-slate-900 dark:text-white">
-                  {users.find(u => u.uid === userId)?.displayName || 'Unknown User'}
-                </h3>
-                <p className="text-xs text-slate-500">Total Quizzes: {results.length}</p>
-                <button
-                  onClick={async () => {
-                    if (confirm('Are you sure you want to delete all quiz results for this user?')) {
-                      await Promise.all(results.map(handleDeleteQuizResult));
-                    }
-                  }}
-                  className="mt-4 w-full py-2 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-lg font-bold hover:bg-red-100 transition-colors"
-                >
-                  Delete All Results
-                </button>
-              </div>
-            ))}
+            }, {} as Record<string, QuizResult[]>)).map(([userId, results]) => {
+              const user = users.find(u => u.uid === userId);
+              const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
+              const totalQuestions = results.reduce((sum, r) => sum + r.totalQuestions, 0);
+              const totalCorrect = results.reduce((sum, r) => sum + r.score, 0);
+              const accuracy = (totalCorrect / totalQuestions) * 100;
+
+              return (
+                <div key={userId} className="group bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-blue-500/20">
+                      {(user?.displayName || user?.email || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 className="font-black text-slate-900 dark:text-white text-lg leading-tight">
+                        {user?.displayName || 'Unknown User'}
+                      </h3>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{results.length} Quizzes Taken</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Avg Score</p>
+                      <p className="text-xl font-black text-blue-600">{avgScore.toFixed(1)}</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Accuracy</p>
+                      <p className="text-xl font-black text-emerald-500">{accuracy.toFixed(0)}%</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      if (confirm('Are you sure you want to delete all quiz results for this user?')) {
+                        await Promise.all(results.map(handleDeleteQuizResult));
+                      }
+                    }}
+                    className="w-full py-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-100 transition-all"
+                  >
+                    Clear History
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : (
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Question Bank</h2>
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+            <div className="flex flex-col md:flex-row md:items-center gap-6">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white">Question Bank</h2>
+              
               {filteredQuestions.length > 0 && (
-                <div className="flex items-center gap-3 ml-4">
+                <div className="flex items-center gap-4 px-4 py-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
                   <button
                     onClick={toggleSelectAll}
-                    className="text-xs font-bold text-blue-600 hover:underline"
+                    className="text-[10px] font-black text-blue-600 uppercase tracking-wider hover:underline"
                   >
                     {selectedQuestionIds.size === filteredQuestions.length ? 'Deselect All' : 'Select All'}
                   </button>
+                  
                   {selectedQuestionIds.size > 0 && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-4 pl-4 border-l border-slate-100 dark:border-slate-800">
                       {selectedSubjectId && (
                         <select
                           onChange={(e) => {
@@ -875,7 +1058,7 @@ export default function Admin() {
                             }
                           }}
                           disabled={isDeletingBulk}
-                          className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg text-xs font-bold border-none focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:opacity-50"
+                          className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-xl text-[10px] font-black uppercase tracking-wider border-none focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:opacity-50"
                         >
                           <option value="">Move to Section...</option>
                           <option value="none">-- Remove from Section --</option>
@@ -887,10 +1070,10 @@ export default function Admin() {
                       <button
                         onClick={handleBulkDelete}
                         disabled={isDeletingBulk}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 transition-all disabled:opacity-50"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-red-100 transition-all disabled:opacity-50"
                       >
-                        {isDeletingBulk ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                        Delete Selected ({selectedQuestionIds.size})
+                        {isDeletingBulk ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        Delete ({selectedQuestionIds.size})
                       </button>
                     </div>
                   )}
@@ -899,26 +1082,28 @@ export default function Admin() {
             </div>
             <button
               onClick={() => setShowQuestionForm(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all"
+              className="flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
               <Plus size={20} />
-              Add New Question
+              Add Question
             </button>
           </div>
 
           {/* File Upload Section */}
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm mb-8">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-              <FileUp size={20} className="text-blue-600" />
-              Upload Questions (PDF / Word)
-            </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-              Upload a file containing questions, and the system will extract them automatically. Mark the correct answer with an asterisk (*).
-            </p>
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm mb-10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600">
+                <FileUp size={20} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">Bulk Import</h3>
+                <p className="text-sm text-slate-400">Upload PDF or Word documents to extract questions automatically.</p>
+              </div>
+            </div>
             
-            <div className="flex flex-col md:flex-row items-end gap-4">
-              <div className="flex-1 w-full">
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-2 mr-2">Select Subject</label>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-end">
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-1">Target Subject</label>
                 <select 
                   value={selectedSubjectId}
                   onChange={(e) => {
@@ -926,7 +1111,7 @@ export default function Admin() {
                     setSelectedSectionId('');
                     setSelectedQuestionIds(new Set());
                   }}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white"
+                  className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                 >
                   <option value="">All Subjects</option>
                   {subjects.map(s => (
@@ -935,15 +1120,15 @@ export default function Admin() {
                 </select>
               </div>
 
-              <div className="flex-1 w-full">
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-2 mr-2">Select Section</label>
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-1">Target Section</label>
                 <select 
                   value={selectedSectionId}
                   onChange={(e) => {
                     setSelectedSectionId(e.target.value);
                     setSelectedQuestionIds(new Set());
                   }}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white"
+                  className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold disabled:opacity-50"
                   disabled={!selectedSubjectId}
                 >
                   <option value="">All Sections</option>
@@ -956,7 +1141,7 @@ export default function Admin() {
                 </select>
               </div>
               
-              <div className="flex-1 w-full">
+              <div className="relative">
                 <input 
                   type="file" 
                   ref={fileInputRef}
@@ -967,61 +1152,85 @@ export default function Admin() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading || !selectedSubjectId}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
+                  className={cn(
+                    "w-full flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all",
+                    isUploading 
+                      ? "bg-slate-100 text-slate-400" 
+                      : "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/30"
+                  )}
                 >
-                  {isUploading ? <Loader2 size={20} className="animate-spin" /> : <FileUp size={20} />}
-                  {isUploading ? 'Uploading...' : 'Choose PDF or Word File'}
+                  {isUploading ? <Loader2 size={18} className="animate-spin" /> : <FileUp size={18} />}
+                  {isUploading ? 'Processing...' : 'Select Document'}
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
             {filteredQuestions.map((q) => (
               <div 
                 key={q.id} 
                 className={cn(
-                  "bg-white dark:bg-slate-900 p-6 rounded-3xl border transition-all flex items-center justify-between gap-6",
-                  selectedQuestionIds.has(q.id) ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-100 dark:border-slate-800 shadow-sm"
+                  "group bg-white dark:bg-slate-900 p-6 rounded-3xl border transition-all flex items-center justify-between gap-6",
+                  selectedQuestionIds.has(q.id) 
+                    ? "border-blue-500 ring-1 ring-blue-500 shadow-lg shadow-blue-500/10" 
+                    : "border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md"
                 )}
               >
-                <div className="flex items-center gap-4 flex-1 min-w-0">
-                  <input
-                    type="checkbox"
-                    checked={selectedQuestionIds.has(q.id)}
-                    onChange={() => toggleQuestionSelection(q.id)}
-                    className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
+                <div className="flex items-center gap-6 flex-1 min-w-0">
+                  <div className="relative flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedQuestionIds.has(q.id)}
+                      onChange={() => toggleQuestionSelection(q.id)}
+                      className="w-6 h-6 rounded-lg border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all"
+                    />
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[10px] font-bold rounded uppercase">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[9px] font-black uppercase tracking-wider rounded-lg">
                         {subjects.find(s => s.id === q.subjectId || (s as any).manualId === q.subjectId)?.nameEn || 'Subject'}
                       </span>
                       {q.sectionId && (
-                        <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 text-[10px] font-bold rounded uppercase">
+                        <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 text-[9px] font-black uppercase tracking-wider rounded-lg">
                           {sections.find(s => s.id === q.sectionId)?.nameEn || sections.find(s => s.id === q.sectionId)?.nameAr || 'Section'}
                         </span>
                       )}
                       <span className={cn(
-                        "px-2 py-0.5 text-[10px] font-bold rounded uppercase",
-                        q.difficulty === 'easy' ? "bg-emerald-50 text-emerald-600" :
-                        q.difficulty === 'medium' ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"
+                        "px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg",
+                        q.difficulty === 'easy' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20" :
+                        q.difficulty === 'medium' ? "bg-amber-50 text-amber-600 dark:bg-amber-900/20" : "bg-red-50 text-red-600 dark:bg-red-900/20"
                       )}>
                         {q.difficulty}
                       </span>
                     </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white truncate">{q.title}</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-white text-base leading-snug truncate">{q.title}</h3>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button className="p-2 text-slate-400 hover:text-blue-600 rounded-lg transition-colors">
-                    <Edit2 size={20} />
+                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button 
+                    onClick={() => {
+                      setEditingQuestion(q);
+                      setQuestionForm({
+                        subjectId: q.subjectId,
+                        sectionId: q.sectionId,
+                        title: q.title,
+                        options: q.options,
+                        correctAnswer: q.correctAnswer,
+                        explanation: q.explanation,
+                        difficulty: q.difficulty
+                      });
+                      setShowQuestionForm(true);
+                    }}
+                    className="p-3 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
+                  >
+                    <Edit2 size={18} />
                   </button>
                   <button
                     onClick={() => handleDelete('questions', q.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
+                    className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
                   >
-                    <Trash2 size={20} />
+                    <Trash2 size={18} />
                   </button>
                 </div>
               </div>
@@ -1030,146 +1239,134 @@ export default function Admin() {
         </section>
       )}
 
+      {/* Background Glows */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/5 rounded-full blur-[120px]" />
+      </div>
+
       {/* Subject Form Modal */}
-      <AnimatePresence>
-        {showSubjectForm && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Add Subject</h2>
-                <button onClick={() => setShowSubjectForm(false)} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+      {showSubjectForm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-10">
+                <h2 className="text-3xl font-black text-slate-900 dark:text-white">{editingSubject ? 'Edit Subject' : 'Add Subject'}</h2>
+                <button onClick={() => { setShowSubjectForm(false); setEditingSubject(null); }} className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAddSubject} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Category Name (English/Primary)</label>
+              <form onSubmit={handleAddSubject} className="space-y-8">
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Category Name (English)</label>
                   <input
                     type="text"
+                    required
                     value={subjectForm.nameEn}
                     onChange={(e) => setSubjectForm({ ...subjectForm, nameEn: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter name..."
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                    placeholder="e.g. Internal Medicine"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Category Name (Arabic/Secondary)</label>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Category Name (Arabic)</label>
                   <input
                     type="text"
                     value={subjectForm.nameAr}
                     onChange={(e) => setSubjectForm({ ...subjectForm, nameAr: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                     placeholder="Optional..."
                   />
                 </div>
-                <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20">
-                  Save Category
+                <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                  {editingSubject ? 'Update Category' : 'Create Category'}
                 </button>
               </form>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* Section Form Modal */}
-      <AnimatePresence>
-        {showSectionForm && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Add Section</h2>
-                <button onClick={() => setShowSectionForm(false)} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+      {showSectionForm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-10">
+                <h2 className="text-3xl font-black text-slate-900 dark:text-white">{editingSection ? 'Edit Section' : 'Add Section'}</h2>
+                <button onClick={() => { setShowSectionForm(false); setEditingSection(null); }} className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAddSection} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Parent Subject</label>
+              <form onSubmit={handleAddSection} className="space-y-8">
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Parent Subject</label>
                   <select
                     required
                     value={sectionForm.subjectId}
                     onChange={(e) => setSectionForm({ ...sectionForm, subjectId: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                   >
                     <option value="">Select subject...</option>
                     {subjects.map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Section Name (English/Primary)</label>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Section Name (English)</label>
                   <input
                     type="text"
+                    required
                     value={sectionForm.nameEn}
                     onChange={(e) => setSectionForm({ ...sectionForm, nameEn: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter name..."
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                    placeholder="e.g. Cardiology"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Section Name (Arabic/Secondary)</label>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Section Name (Arabic)</label>
                   <input
                     type="text"
                     value={sectionForm.nameAr}
                     onChange={(e) => setSectionForm({ ...sectionForm, nameAr: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                     placeholder="Optional..."
                   />
                 </div>
-                <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20">
-                  Save Section
+                <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                  {editingSection ? 'Update Section' : 'Create Section'}
                 </button>
               </form>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* Question Form Modal */}
-      <AnimatePresence>
-        {showQuestionForm && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl my-8"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Add Question</h2>
-                <button onClick={() => setShowQuestionForm(false)} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+      {showQuestionForm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-300">
+          <div className="w-full max-w-3xl bg-white dark:bg-slate-900 rounded-[3rem] p-10 shadow-2xl my-8 animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-10">
+                <h2 className="text-3xl font-black text-slate-900 dark:text-white">{editingQuestion ? 'Edit Question' : 'Add Question'}</h2>
+                <button onClick={() => { setShowQuestionForm(false); setEditingQuestion(null); }} className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAddQuestion} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Subject</label>
+              <form onSubmit={handleAddQuestion} className="space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Subject</label>
                     <select
                       required
                       value={questionForm.subjectId}
                       onChange={(e) => setQuestionForm({ ...questionForm, subjectId: e.target.value, sectionId: '' })}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                     >
                       <option value="">Select subject...</option>
                       {subjects.map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Section (Optional)</label>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Section</label>
                     <select
                       value={questionForm.sectionId}
                       onChange={(e) => setQuestionForm({ ...questionForm, sectionId: e.target.value })}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold disabled:opacity-50"
                       disabled={!questionForm.subjectId}
                     >
                       <option value="">Select section...</option>
@@ -1179,12 +1376,12 @@ export default function Admin() {
                       }
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Difficulty</label>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Difficulty</label>
                     <select
                       value={questionForm.difficulty}
                       onChange={(e) => setQuestionForm({ ...questionForm, difficulty: e.target.value as any })}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                     >
                       <option value="easy">Easy</option>
                       <option value="medium">Medium</option>
@@ -1193,21 +1390,22 @@ export default function Admin() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Question Text</label>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Question Content</label>
                   <textarea
                     required
                     rows={3}
                     value={questionForm.title}
                     onChange={(e) => setQuestionForm({ ...questionForm, title: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold resize-none"
+                    placeholder="Enter the question text here..."
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {questionForm.options?.map((opt, i) => (
-                    <div key={i}>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Option {String.fromCharCode(65 + i)}</label>
+                    <div key={i} className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Option {String.fromCharCode(65 + i)}</label>
                       <input
                         type="text"
                         required
@@ -1217,46 +1415,53 @@ export default function Admin() {
                           newOpts[i] = e.target.value;
                           setQuestionForm({ ...questionForm, options: newOpts });
                         }}
-                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                       />
                     </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Correct Answer</label>
-                    <select
-                      value={questionForm.correctAnswer}
-                      onChange={(e) => setQuestionForm({ ...questionForm, correctAnswer: parseInt(e.target.value) })}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value={0}>Option A</option>
-                      <option value={1}>Option B</option>
-                      <option value={2}>Option C</option>
-                      <option value={3}>Option D</option>
-                    </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Correct Answer</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[0, 1, 2, 3].map((idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setQuestionForm({ ...questionForm, correctAnswer: idx })}
+                          className={cn(
+                            "py-3 rounded-xl font-black text-sm transition-all",
+                            questionForm.correctAnswer === idx 
+                              ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20" 
+                              : "bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          )}
+                        >
+                          {String.fromCharCode(65 + idx)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Explanation (Supports Markdown)</label>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Explanation (Optional)</label>
                   <textarea
                     rows={4}
                     value={questionForm.explanation}
                     onChange={(e) => setQuestionForm({ ...questionForm, explanation: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold resize-none"
+                    placeholder="Provide context for the correct answer..."
                   />
                 </div>
 
-                <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20">
-                  Save Question
+                <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                  {editingQuestion ? 'Update Question' : 'Save Question'}
                 </button>
               </form>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

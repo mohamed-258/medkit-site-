@@ -1,5 +1,4 @@
 import { useLocation, Link, useParams } from 'react-router-dom';
-import { motion } from 'motion/react';
 import { Trophy, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Star, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -30,32 +29,26 @@ export default function Result() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-10">
       {/* Score Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-100 dark:border-slate-800 p-10 lg:p-16 shadow-xl shadow-slate-200/50 dark:shadow-none text-center mb-12 relative overflow-hidden"
+      <div
+        className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-100 dark:border-slate-800 p-10 lg:p-16 shadow-xl shadow-slate-200/50 dark:shadow-none text-center mb-12 relative overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 soft-glow"
       >
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
         
-        <div className="w-24 h-24 bg-amber-500/10 rounded-3xl flex items-center justify-center text-amber-500 mx-auto mb-8">
+        <div className="w-24 h-24 bg-amber-500/10 rounded-[2rem] flex items-center justify-center text-amber-500 mx-auto mb-8 shadow-inner">
           <Trophy size={48} />
         </div>
         
         <h1 className="text-4xl font-black text-slate-900 dark:text-white mb-4">Well Done!</h1>
         <p className="text-slate-500 dark:text-slate-400 mb-10 text-lg">You have successfully completed the exam. Here is your performance summary:</p>
         
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-12">
           <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Final Score</p>
-            <p className="text-3xl font-black text-blue-600">{percentage}%</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Degree</p>
+            <p className="text-3xl font-black text-blue-600">{result.score} / {result.totalQuestions}</p>
           </div>
           <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
             <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Correct Answers</p>
             <p className="text-3xl font-black text-emerald-600">{result.score} / {result.totalQuestions}</p>
-          </div>
-          <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Points Earned</p>
-            <p className="text-3xl font-black text-amber-500">+{pointsEarned !== undefined ? pointsEarned : result.score * 10}</p>
           </div>
         </div>
 
@@ -69,7 +62,7 @@ export default function Result() {
             <ArrowLeft size={20} />
           </Link>
         </div>
-      </motion.div>
+      </div>
 
       {/* Detailed Review */}
       <section>
@@ -84,15 +77,13 @@ export default function Result() {
             const isExpanded = expandedIdx === i;
 
             return (
-              <motion.div
+              <div
                 key={q.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
                 className={cn(
-                  "bg-white dark:bg-slate-900 rounded-3xl border transition-all overflow-hidden",
+                  "bg-white dark:bg-slate-900 rounded-3xl border transition-all overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500",
                   isCorrect ? "border-emerald-100 dark:border-emerald-900/30" : "border-red-100 dark:border-red-900/30"
                 )}
+                style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'both' }}
               >
                 <button
                   onClick={() => setExpandedIdx(isExpanded ? null : i)}
@@ -105,7 +96,10 @@ export default function Result() {
                     )}>
                       {isCorrect ? <CheckCircle2 size={24} /> : <XCircle size={24} />}
                     </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white leading-relaxed">{q.title}</h3>
+                    <div>
+                      <h3 className="font-bold text-slate-900 dark:text-white leading-relaxed">{q.title}</h3>
+                      <span className="text-xs font-bold text-slate-400 mt-1 block">1 Mark</span>
+                    </div>
                   </div>
                   <div className="text-slate-400">
                     {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -148,7 +142,7 @@ export default function Result() {
                     </div>
                   </div>
                 )}
-              </motion.div>
+              </div>
             );
           })}
         </div>

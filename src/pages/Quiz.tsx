@@ -4,7 +4,6 @@ import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment } 
 import { db, auth } from '../firebase';
 import { useAuth } from '../App';
 import { Question, Subject, QuizResult } from '../types';
-import { motion, AnimatePresence } from 'motion/react';
 import { BookOpen, Clock, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, ArrowLeft, Trophy, Zap, Star, LayoutGrid, Flag } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
@@ -282,6 +281,8 @@ export default function Quiz() {
       score,
       totalQuestions: questions.length,
       timestamp: new Date().toISOString(),
+      questions,
+      selectedAnswers,
     };
 
     try {
@@ -381,10 +382,9 @@ export default function Quiz() {
       </div>
       
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <motion.button
-          whileHover={{ y: -4 }}
+        <button
           onClick={() => handleStartQuiz()}
-          className="p-8 bg-blue-600 text-white rounded-[2rem] shadow-xl shadow-blue-500/20 text-left group transition-all"
+          className="p-8 bg-blue-600 text-white rounded-[2rem] shadow-xl shadow-blue-500/20 text-left group transition-all duration-300 hover:-translate-y-1"
         >
           <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
             <LayoutGrid size={24} />
@@ -399,14 +399,13 @@ export default function Quiz() {
             )}
           </div>
           <p className="text-blue-100 text-sm">Test your knowledge across the entire subject.</p>
-        </motion.button>
+        </button>
 
         {sections.map((section) => (
-          <motion.button
+          <button
             key={section.id}
-            whileHover={{ y: -4 }}
             onClick={() => handleStartQuiz(section.id)}
-            className="p-8 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2rem] shadow-sm hover:shadow-xl hover:border-blue-200 dark:hover:border-blue-900 text-left group transition-all"
+            className="p-8 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2rem] shadow-sm hover:shadow-xl hover:border-blue-200 dark:hover:border-blue-900 text-left group transition-all duration-300 hover:-translate-y-1"
           >
             <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center mb-6 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
               <BookOpen size={24} />
@@ -421,7 +420,7 @@ export default function Quiz() {
               )}
             </div>
             <p className="text-slate-500 dark:text-slate-400 text-sm">{section.nameEn && section.nameAr ? section.nameAr : 'Practice this section specifically.'}</p>
-          </motion.button>
+          </button>
         ))}
       </div>
 
@@ -482,83 +481,76 @@ export default function Quiz() {
           </div>
 
           {/* Progress Bar */}
-          <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full mb-12 overflow-hidden">
-            <motion.div 
-              className="h-full bg-blue-600"
-              initial={{ width: 0 }}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.3 }}
+          <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full mb-12 overflow-hidden shadow-inner">
+            <div 
+              className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
             />
           </div>
 
           {/* Question Card */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentIdx}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 lg:p-12 shadow-sm mb-8"
-            >
-              <div className="mb-10 flex items-start justify-between gap-4">
-                <div>
-                  <span className={cn(
-                    "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-4 inline-block",
-                    currentQuestion.difficulty === 'easy' ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600" :
-                    currentQuestion.difficulty === 'medium' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600" :
-                    "bg-red-50 dark:bg-red-900/20 text-red-600"
-                  )}>
-                    {currentQuestion.difficulty === 'easy' ? 'Easy' : currentQuestion.difficulty === 'medium' ? 'Medium' : 'Hard'}
-                  </span>
-                  <h2 className="text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white leading-relaxed">
-                    {currentQuestion.title}
-                  </h2>
-                </div>
-                <button
-                  onClick={() => toggleFlag(currentIdx)}
-                  className={cn(
-                    "p-3 rounded-2xl border-2 transition-all shrink-0",
-                    flaggedQuestions.has(currentIdx)
-                      ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500 text-amber-500"
-                      : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-400 hover:border-amber-200"
-                  )}
-                  title="Flag for later"
-                >
-                  <Flag size={20} fill={flaggedQuestions.has(currentIdx) ? "currentColor" : "none"} />
-                </button>
+          <div
+            key={currentIdx}
+            className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 lg:p-12 shadow-sm mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500 soft-glow"
+          >
+            <div className="mb-10 flex items-start justify-between gap-4">
+              <div>
+                <span className={cn(
+                  "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-4 inline-block",
+                  currentQuestion.difficulty === 'easy' ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600" :
+                  currentQuestion.difficulty === 'medium' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600" :
+                  "bg-red-50 dark:bg-red-900/20 text-red-600"
+                )}>
+                  {currentQuestion.difficulty === 'easy' ? 'Easy' : currentQuestion.difficulty === 'medium' ? 'Medium' : 'Hard'}
+                </span>
+                <h2 className="text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white leading-relaxed">
+                  {currentQuestion.title}
+                </h2>
               </div>
+              <button
+                onClick={() => toggleFlag(currentIdx)}
+                className={cn(
+                  "p-3 rounded-2xl border-2 transition-all shrink-0",
+                  flaggedQuestions.has(currentIdx)
+                    ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500 text-amber-500"
+                    : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-400 hover:border-amber-200"
+                )}
+                title="Flag for later"
+              >
+                <Flag size={20} fill={flaggedQuestions.has(currentIdx) ? "currentColor" : "none"} />
+              </button>
+            </div>
 
-              <div className="grid grid-cols-1 gap-4">
-                {currentQuestion.options.map((option, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleAnswer(i)}
-                    className={cn(
-                      "w-full text-left p-6 rounded-2xl border-2 transition-all flex items-center justify-between group",
-                      selectedAnswers[currentIdx] === i 
-                        ? "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-600" 
-                        : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-blue-200 dark:hover:border-blue-900"
-                    )}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={cn(
-                        "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-colors",
-                        selectedAnswers[currentIdx] === i ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40"
-                      )}>
-                        {String.fromCharCode(65 + i)}
-                      </div>
-                      <span className="text-lg font-medium">{option}</span>
+            <div className="grid grid-cols-1 gap-4">
+              {currentQuestion.options.map((option, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleAnswer(i)}
+                  className={cn(
+                    "w-full text-left p-6 rounded-2xl border-2 transition-all flex items-center justify-between group",
+                    selectedAnswers[currentIdx] === i 
+                      ? "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-600" 
+                      : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-blue-200 dark:hover:border-blue-900 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+                  )}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-colors",
+                      selectedAnswers[currentIdx] === i ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40"
+                    )}>
+                      {String.fromCharCode(65 + i)}
                     </div>
-                    {selectedAnswers[currentIdx] === i && (
-                      <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white">
-                        <CheckCircle2 size={16} />
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </AnimatePresence>
+                    <span className="text-lg font-medium">{option}</span>
+                  </div>
+                  {selectedAnswers[currentIdx] === i && (
+                    <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white">
+                      <CheckCircle2 size={16} />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Navigation */}
           <div className="flex items-center justify-between">
@@ -608,11 +600,11 @@ export default function Quiz() {
                     "aspect-square rounded-xl flex items-center justify-center text-xs font-bold transition-all relative",
                     currentIdx === i 
                       ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-110 z-10" 
-                      : selectedAnswers[i] !== undefined
-                        ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 border border-emerald-100 dark:border-emerald-800"
-                        : visitedQuestions.has(i)
-                          ? "bg-red-50 dark:bg-red-900/20 text-red-600 border border-red-100 dark:border-red-800"
-                          : "bg-slate-50 dark:bg-slate-800 text-slate-400 border border-slate-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-900"
+                      : flaggedQuestions.has(i)
+                        ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 border border-amber-200 dark:border-amber-800"
+                        : selectedAnswers[i] !== undefined
+                          ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 border border-emerald-100 dark:border-emerald-800"
+                          : "bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-700"
                   )}
                 >
                   {i + 1}
