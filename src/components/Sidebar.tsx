@@ -29,14 +29,7 @@ export default function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 hidden lg:flex flex-col z-50">
       <div className="p-8">
-        <Link to="/" className="flex items-center gap-3 group">
-          <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-105 transition-all duration-300">
-            <ShieldCheck size={24} />
-          </div>
-          <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-            Medkit
-          </span>
-        </Link>
+        <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Navigation</h2>
       </div>
 
       <nav className="flex-1 px-4 space-y-1.5 mt-4">

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { collection, onSnapshot, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, getDocs, where, getCountFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../App';
 import { Subject, UserProfile, QuizResult } from '../types';
@@ -11,12 +11,8 @@ import {
   ArrowUpRight, MoreHorizontal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { cn } from '../lib/utils';
+import SubjectCard from '../components/SubjectCard';
 
 export default function Dashboard() {
   const { profile } = useAuth();
@@ -44,11 +40,11 @@ export default function Dashboard() {
       setSubjects(subjectsData);
       
       const counts: Record<string, number> = {};
-      for (const subject of subjectsData) {
+      await Promise.all(subjectsData.map(async (subject) => {
         const q = query(collection(db, 'questions'), where('subjectId', '==', subject.id));
-        const qSnap = await getDocs(q);
-        counts[subject.id] = qSnap.size;
-      }
+        const snapshot = await getCountFromServer(q);
+        counts[subject.id] = snapshot.data().count;
+      }));
       setSubjectQuestionCounts(counts);
       setLoading(false);
     });
@@ -197,62 +193,16 @@ export default function Dashboard() {
               const isLocked = subject.isLocked && !(profile?.allowedSubjects || []).includes(subject.id) && profile?.role !== 'admin';
               
               return (
-                <motion.div
+                <SubjectCard
                   key={subject.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.3 + i * 0.05 }}
-                  className="group bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
-                >
-                  <div className="flex items-start justify-between mb-8">
-                    <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300 shadow-inner">
-                      <BookOpen size={32} />
-                    </div>
-                    <div className={cn(
-                      "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest",
-                      status === 'Completed' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20" :
-                      status === 'In Progress' ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20" :
-                      "bg-slate-50 text-slate-500 dark:bg-slate-800"
-                    )}>
-                      {status}
-                    </div>
-                  </div>
-
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">{subject.nameEn || subject.nameAr}</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-8">{subjectQuestionCounts[subject.id] || 0} Questions Available</p>
-
-                  <div className="space-y-3 mb-8">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-slate-400">Progress</span>
-                      <span className="text-blue-600">{progress}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-slate-50 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress}%` }}
-                        className="h-full bg-blue-600 rounded-full"
-                      />
-                    </div>
-                  </div>
-
-                  {isLocked ? (
-                    <button 
-                      onClick={() => setShowLockedModal(true)}
-                      className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      <Lock size={18} />
-                      Unlock Subject
-                    </button>
-                  ) : (
-                    <Link 
-                      to={`/quiz/${subject.id}`}
-                      className="w-full py-4 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl font-bold flex items-center justify-center gap-2 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm"
-                    >
-                      <PlayCircle size={18} />
-                      {progress > 0 ? 'Continue' : 'Start'}
-                    </Link>
-                  )}
-                </motion.div>
+                  subject={subject}
+                  status={status}
+                  progress={progress}
+                  questionCount={subjectQuestionCounts[subject.id] || 0}
+                  isLocked={isLocked}
+                  onUnlock={() => setShowLockedModal(true)}
+                  index={i}
+                />
               );
             })}
           </div>
@@ -377,42 +327,20 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {subjects.map((subject, i) => {
           const status = getSubjectStatus(subject.id);
+          const progress = getSubjectProgress(subject.id);
           const isLocked = subject.isLocked && !(profile?.allowedSubjects || []).includes(subject.id) && profile?.role !== 'admin';
           
           return (
-            <motion.div
+            <SubjectCard
               key={subject.id}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.05 }}
-              className="group bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all duration-300"
-            >
-              <div className="flex items-start justify-between mb-6">
-                <div className="w-14 h-14 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
-                  <BookOpen size={28} />
-                </div>
-                <div className={cn(
-                  "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
-                  status === 'Completed' ? "bg-emerald-50 text-emerald-600" :
-                  status === 'In Progress' ? "bg-blue-50 text-blue-600" :
-                  "bg-slate-50 text-slate-500"
-                )}>
-                  {status}
-                </div>
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{subject.nameEn || subject.nameAr}</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{subjectQuestionCounts[subject.id] || 0} Questions</p>
-              
-              {isLocked ? (
-                <button onClick={() => setShowLockedModal(true)} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-xl font-bold flex items-center justify-center gap-2">
-                  <Lock size={18} /> Unlock
-                </button>
-              ) : (
-                <Link to={`/quiz/${subject.id}`} className="w-full py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl font-bold flex items-center justify-center gap-2 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                  <PlayCircle size={18} /> Start
-                </Link>
-              )}
-            </motion.div>
+              subject={subject}
+              status={status}
+              progress={progress}
+              questionCount={subjectQuestionCounts[subject.id] || 0}
+              isLocked={isLocked}
+              onUnlock={() => setShowLockedModal(true)}
+              index={i}
+            />
           );
         })}
       </div>

@@ -35,10 +35,12 @@ export interface Question {
   subjectId: string;
   sectionId?: string;
   title: string;
+  imageUrl?: string;
   options: string[];
   correctAnswer: number;
   explanation: string;
   difficulty: 'easy' | 'medium' | 'hard';
+  order?: number;
 }
 
 export interface QuizResult {

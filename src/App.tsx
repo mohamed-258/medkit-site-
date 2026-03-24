@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode, lazy, Suspense } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, getDocFromServer } from 'firebase/firestore';
@@ -152,13 +152,20 @@ export function useAuth() {
 }
 
 // Components
-import HomePage from './pages/Home';
-import LoginPage from './pages/Login';
-import RegisterPage from './pages/Register';
-import DashboardPage from './pages/Dashboard';
-import QuizPage from './pages/Quiz';
-import ResultPage from './pages/Result';
-import AdminPage from './pages/Admin';
+const HomePage = lazy(() => import('./pages/Home'));
+const LoginPage = lazy(() => import('./pages/Login'));
+const RegisterPage = lazy(() => import('./pages/Register'));
+const DashboardPage = lazy(() => import('./pages/Dashboard'));
+const QuizPage = lazy(() => import('./pages/Quiz'));
+const ResultPage = lazy(() => import('./pages/Result'));
+const AdminPage = lazy(() => import('./pages/Admin'));
+
+// Loading Fallback
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+    <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+  </div>
+);
 
 function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -311,18 +318,7 @@ function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-105 transition-all duration-300">
-                <ShieldCheck size={24} />
-              </div>
-              <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-                Medkit
-              </span>
-            </Link>
-          </div>
-
-          {/* Desktop Menu */}
+          {/* Desktop Menu - Left Side */}
           <div className="hidden md:flex items-center gap-2">
             <Link to="/" className={linkClass('/')}>Home</Link>
             {user ? (
@@ -331,39 +327,48 @@ function Navbar() {
                 {isAdmin && (
                   <Link to="/admin" className={linkClass('/admin')}>Admin Panel</Link>
                 )}
-                <div className="w-px h-6 bg-slate-100 dark:bg-slate-800 mx-2" />
-                <button onClick={() => setIsDark(!isDark)} className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors">
-                  {isDark ? <Sun size={20} /> : <Moon size={20} />}
-                </button>
-                <div className="flex items-center gap-3 pl-2">
-                  <div className="text-right">
-                    <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{profile?.displayName}</p>
-                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">{profile?.points} Points</p>
-                  </div>
-                  <button onClick={logout} className="p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl transition-colors">
-                    <LogOut size={20} />
-                  </button>
-                </div>
               </>
             ) : (
               <div className="flex items-center gap-4">
-                <button onClick={() => setIsDark(!isDark)} className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors">
-                  {isDark ? <Sun size={20} /> : <Moon size={20} />}
-                </button>
                 <Link to="/login" className="text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors">Login</Link>
                 <Link to="/register" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-black text-sm shadow-xl shadow-blue-500/25 transition-all hover:-translate-y-0.5 active:scale-95">Start Now</Link>
               </div>
             )}
           </div>
 
-          {/* Mobile menu button */}
-          <div className="md:hidden flex items-center gap-2">
-            <button onClick={() => setIsDark(!isDark)} className="p-2 text-slate-500 rounded-lg">
+          {/* Right Side - Logo and Theme Toggle */}
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsDark(!isDark)} className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors">
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-slate-600 dark:text-slate-300">
-              {isOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
+
+            {user && (
+              <div className="hidden md:flex items-center gap-3 pl-2 border-l border-slate-100 dark:border-slate-800">
+                <div className="text-right">
+                  <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{profile?.displayName}</p>
+                  <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">{profile?.points} Points</p>
+                </div>
+                <button onClick={logout} className="p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl transition-colors">
+                  <LogOut size={20} />
+                </button>
+              </div>
+            )}
+
+            <Link to="/" className="flex items-center gap-3 group">
+              <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white hidden xs:block">
+                Medkit
+              </span>
+              <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-105 transition-all duration-300">
+                <ShieldCheck size={24} />
+              </div>
+            </Link>
+
+            {/* Mobile menu button */}
+            <div className="md:hidden flex items-center">
+              <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-slate-600 dark:text-slate-300">
+                {isOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -473,56 +478,58 @@ function AppContent() {
     return (
       <div dir="ltr" className="min-h-screen bg-[#f8fafc] dark:bg-slate-950 transition-colors">
         <DashboardLayout>
-          <Routes>
-            <Route 
-              path="/dashboard" 
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/subjects" 
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/quizzes" 
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/progress" 
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/profile" 
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/admin" 
-              element={
-                <ProtectedRoute adminOnly>
-                  <AdminPage />
-                </ProtectedRoute>
-              } 
-            />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route 
+                path="/dashboard" 
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/subjects" 
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/quizzes" 
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/progress" 
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/profile" 
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/admin" 
+                element={
+                  <ProtectedRoute adminOnly>
+                    <AdminPage />
+                  </ProtectedRoute>
+                } 
+              />
+            </Routes>
+          </Suspense>
         </DashboardLayout>
       </div>
     );
@@ -532,27 +539,29 @@ function AppContent() {
     <div dir="ltr" className="min-h-screen bg-white dark:bg-slate-900 transition-colors">
       <Navbar />
       <main className="pt-16 min-h-[calc(100vh-300px)]">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route 
-            path="/quiz/:subjectId" 
-            element={
-              <ProtectedRoute>
-                <QuizPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/result/:resultId" 
-            element={
-              <ProtectedRoute>
-                <ResultPage />
-              </ProtectedRoute>
-            } 
-          />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route 
+              path="/quiz/:subjectId" 
+              element={
+                <ProtectedRoute>
+                  <QuizPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/result/:resultId" 
+              element={
+                <ProtectedRoute>
+                  <ResultPage />
+                </ProtectedRoute>
+              } 
+            />
+          </Routes>
+        </Suspense>
       </main>
       <Footer />
     </div>

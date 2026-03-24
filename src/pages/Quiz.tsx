@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useAuth } from '../App';
 import { Question, Subject, QuizResult } from '../types';
 import { BookOpen, Clock, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, ArrowLeft, Trophy, Zap, Star, LayoutGrid, Flag } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -38,6 +39,47 @@ export default function Quiz() {
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isFinished || showResumeModal || showSectionSelection || loading || questions.length === 0) return;
+
+      // Number keys 1-4 for options
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        const index = parseInt(e.key) - 1;
+        const currentQuestion = questions[currentIdx];
+        if (currentQuestion && index < currentQuestion.options.length) {
+          handleAnswer(index);
+        }
+      }
+
+      // Space or Right Arrow for Next
+      if (e.key === ' ' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (currentIdx < questions.length - 1) {
+          setCurrentIdx(prev => prev + 1);
+        }
+      }
+
+      // Left Arrow for Previous
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentIdx > 0) {
+          setCurrentIdx(prev => prev - 1);
+        }
+      }
+      
+      // 'F' or 'B' for Flag/Bookmark
+      if (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleFlag(currentIdx);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIdx, questions, isFinished, showResumeModal, showSectionSelection, loading]);
+
   useEffect(() => {
     if (questions.length > 0) {
       setVisitedQuestions(prev => new Set(prev).add(currentIdx));
@@ -50,21 +92,19 @@ export default function Quiz() {
       
       try {
         // Fetch subject
-        const subjectDoc = await getDocs(query(collection(db, 'subjects'), where('id', '==', subjectId)));
         let currentSubject: Subject | null = null;
         
-        if (!subjectDoc.empty) {
-          currentSubject = { ...subjectDoc.docs[0].data(), id: subjectDoc.docs[0].id } as Subject;
+        // First try fetching by document ID
+        const subjectRef = doc(db, 'subjects', subjectId);
+        const subjectSnap = await getDoc(subjectRef);
+        
+        if (subjectSnap.exists()) {
+          currentSubject = { ...subjectSnap.data(), id: subjectSnap.id } as Subject;
         } else {
-          // Try fetching by Firestore ID directly if manual ID query fails
-          try {
-            const directDoc = await getDocs(query(collection(db, 'subjects')));
-            const found = directDoc.docs.find(d => d.id === subjectId);
-            if (found) {
-              currentSubject = { ...found.data(), id: found.id } as Subject;
-            }
-          } catch (e) {
-            console.error("Direct fetch failed", e);
+          // Fallback to querying by 'id' field if it exists
+          const subjectQuery = await getDocs(query(collection(db, 'subjects'), where('id', '==', subjectId)));
+          if (!subjectQuery.empty) {
+            currentSubject = { ...subjectQuery.docs[0].data(), id: subjectQuery.docs[0].id } as Subject;
           }
         }
         
@@ -286,6 +326,13 @@ export default function Quiz() {
     };
 
     try {
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6']
+      });
+
       // Save result
       await addDoc(collection(db, 'quizResults'), resultData);
       
@@ -451,137 +498,156 @@ export default function Quiz() {
   const progress = ((currentIdx + 1) / questions.length) * 100;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10">
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Main Quiz Content */}
-        <div className="lg:col-span-3">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-                <Zap size={24} />
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-20">
+      {/* Fixed Progress Bar at Top */}
+      <div className="fixed top-0 left-0 w-full h-2 bg-slate-200 dark:bg-slate-800 z-50">
+        <div 
+          className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-300 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 pt-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          {/* Main Quiz Content */}
+          <div className="lg:col-span-3">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+                  <Zap size={24} />
+                </div>
+                <div>
+                  <h1 className="text-xl font-black text-slate-900 dark:text-white line-clamp-1">{subject?.nameEn || subject?.nameAr || 'Unnamed Category'}</h1>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[10px] font-bold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                      Question {currentIdx + 1} of {questions.length}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl font-black text-slate-900 dark:text-white">{subject?.nameEn || subject?.nameAr || 'Unnamed Category'}</h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md text-[10px] font-bold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                    Question {currentIdx + 1}
-                  </span>
-                  <span className="text-[10px] text-slate-400">of {questions.length}</span>
+              
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono font-bold text-lg border-2 transition-colors shadow-sm",
+                  timeLeft < 60 ? "bg-red-50 dark:bg-red-900/20 text-red-600 border-red-200 dark:border-red-800 animate-pulse" : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                )}>
+                  <Clock size={20} className={timeLeft < 60 ? "animate-bounce" : ""} />
+                  {formatTime(timeLeft)}
                 </div>
               </div>
             </div>
-            <div className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl font-mono font-bold text-lg border-2 transition-colors",
-              timeLeft < 60 ? "bg-red-50 dark:bg-red-900/20 text-red-600 border-red-100 dark:border-red-800 animate-pulse" : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-100 dark:border-slate-800"
-            )}>
-              <Clock size={20} />
-              {formatTime(timeLeft)}
-            </div>
-          </div>
 
-          {/* Progress Bar */}
-          <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full mb-12 overflow-hidden shadow-inner">
-            <div 
-              className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-
-          {/* Question Card */}
-          <div
-            key={currentIdx}
-            className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 lg:p-12 shadow-sm mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500 soft-glow"
-          >
-            <div className="mb-10 flex items-start justify-between gap-4">
-              <div>
-                <span className={cn(
-                  "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-4 inline-block",
-                  currentQuestion.difficulty === 'easy' ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600" :
-                  currentQuestion.difficulty === 'medium' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600" :
-                  "bg-red-50 dark:bg-red-900/20 text-red-600"
-                )}>
-                  {currentQuestion.difficulty === 'easy' ? 'Easy' : currentQuestion.difficulty === 'medium' ? 'Medium' : 'Hard'}
-                </span>
-                <h2 className="text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white leading-relaxed">
-                  {currentQuestion.title}
-                </h2>
-              </div>
-              <button
-                onClick={() => toggleFlag(currentIdx)}
-                className={cn(
-                  "p-3 rounded-2xl border-2 transition-all shrink-0",
-                  flaggedQuestions.has(currentIdx)
-                    ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500 text-amber-500"
-                    : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-400 hover:border-amber-200"
-                )}
-                title="Flag for later"
-              >
-                <Flag size={20} fill={flaggedQuestions.has(currentIdx) ? "currentColor" : "none"} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              {currentQuestion.options.map((option, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleAnswer(i)}
-                  className={cn(
-                    "w-full text-left p-6 rounded-2xl border-2 transition-all flex items-center justify-between group",
-                    selectedAnswers[currentIdx] === i 
-                      ? "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-600" 
-                      : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-blue-200 dark:hover:border-blue-900 hover:bg-slate-50 dark:hover:bg-slate-800/80"
-                  )}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-colors",
-                      selectedAnswers[currentIdx] === i ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40"
-                    )}>
-                      {String.fromCharCode(65 + i)}
-                    </div>
-                    <span className="text-lg font-medium">{option}</span>
-                  </div>
-                  {selectedAnswers[currentIdx] === i && (
-                    <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white">
-                      <CheckCircle2 size={16} />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
-              disabled={currentIdx === 0}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-30"
+            {/* Question Card */}
+            <div
+              key={currentIdx}
+              className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-6 sm:p-8 lg:p-12 shadow-sm mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 soft-glow relative"
             >
-              <ChevronLeft size={20} />
-              Previous
-            </button>
+              {/* Keyboard Shortcuts Hint */}
+              <div className="absolute top-6 right-6 hidden md:flex items-center gap-2 text-[10px] font-bold text-slate-400">
+                <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">1-4</kbd> to answer
+              </div>
 
-            {currentIdx === questions.length - 1 ? (
+              <div className="mb-8 flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <span className={cn(
+                    "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-4 inline-block",
+                    currentQuestion.difficulty === 'easy' ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600" :
+                    currentQuestion.difficulty === 'medium' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600" :
+                    "bg-red-50 dark:bg-red-900/20 text-red-600"
+                  )}>
+                    {currentQuestion.difficulty === 'easy' ? 'Easy' : currentQuestion.difficulty === 'medium' ? 'Medium' : 'Hard'}
+                  </span>
+                  <div className="prose dark:prose-invert max-w-none text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white leading-relaxed" dangerouslySetInnerHTML={{ __html: currentQuestion.title }} />
+                  {currentQuestion.imageUrl && (
+                    <img src={currentQuestion.imageUrl} alt="Question" loading="lazy" className="mt-6 max-h-72 rounded-2xl object-contain border border-slate-100 dark:border-slate-800 shadow-sm" />
+                  )}
+                </div>
+                <button
+                  onClick={() => toggleFlag(currentIdx)}
+                  className={cn(
+                    "p-3 sm:p-4 rounded-2xl border-2 transition-all shrink-0 flex flex-col items-center gap-1 group",
+                    flaggedQuestions.has(currentIdx)
+                      ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500 text-amber-500 shadow-inner"
+                      : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:border-amber-300 hover:text-amber-500"
+                  )}
+                  title="Bookmark this question (Shortcut: F)"
+                >
+                  <Flag size={24} fill={flaggedQuestions.has(currentIdx) ? "currentColor" : "none"} className="group-hover:scale-110 transition-transform" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider hidden sm:block">Bookmark</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:gap-4">
+                {currentQuestion.options.map((option, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleAnswer(i)}
+                    className={cn(
+                      "w-full text-left p-4 sm:p-6 rounded-2xl border-2 transition-all flex items-center justify-between group relative overflow-hidden",
+                      selectedAnswers[currentIdx] === i 
+                        ? "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 shadow-sm" 
+                        : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+                    )}
+                  >
+                    {selectedAnswers[currentIdx] === i && (
+                      <div className="absolute inset-0 bg-blue-600/5 dark:bg-blue-400/5" />
+                    )}
+                    <div className="flex items-center gap-4 relative z-10">
+                      <div className={cn(
+                        "w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl flex items-center justify-center font-bold text-sm sm:text-base transition-colors",
+                        selectedAnswers[currentIdx] === i ? "bg-blue-600 text-white shadow-md shadow-blue-500/30" : "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 group-hover:text-blue-600 dark:group-hover:text-blue-400"
+                      )}>
+                        {String.fromCharCode(65 + i)}
+                      </div>
+                      <span className="text-base sm:text-lg font-medium">{option}</span>
+                    </div>
+                    {selectedAnswers[currentIdx] === i && (
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200">
+                        <CheckCircle2 size={16} className="sm:w-5 sm:h-5" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
               <button
-                onClick={handleSubmit}
-                disabled={submitting || Object.keys(selectedAnswers).length < questions.length}
-                className="px-10 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold shadow-xl shadow-emerald-500/20 transition-all hover:-translate-y-1 disabled:opacity-50"
+                onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
+                disabled={currentIdx === 0}
+                className="flex items-center gap-2 px-4 sm:px-6 py-3 rounded-xl font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-30 group"
               >
-                {submitting ? 'Saving...' : 'Finish Quiz'}
+                <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+                <span className="hidden sm:inline">Previous</span>
               </button>
-            ) : (
-              <button
-                onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
-                className="flex items-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-1"
-              >
-                Next Question
-                <ChevronRight size={20} />
-              </button>
-            )}
+              
+              <div className="hidden md:flex items-center gap-2 text-xs font-bold text-slate-400">
+                <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">Space</kbd> to next
+              </div>
+
+              {currentIdx === questions.length - 1 ? (
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting || Object.keys(selectedAnswers).length < questions.length}
+                  className="px-6 sm:px-10 py-3 sm:py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 flex items-center gap-2"
+                >
+                  {submitting ? 'Saving...' : 'Finish Quiz'}
+                  {!submitting && <CheckCircle2 size={20} />}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
+                  className="flex items-center gap-2 px-6 sm:px-8 py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5 group"
+                >
+                  <span className="hidden sm:inline">Next Question</span>
+                  <span className="sm:hidden">Next</span>
+                  <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
         {/* Sidebar - Question Navigation Grid */}
         <div className="block">
@@ -638,6 +704,7 @@ export default function Quiz() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

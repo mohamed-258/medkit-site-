@@ -143,7 +143,8 @@ export default function Result() {
                       {isCorrect ? <CheckCircle2 size={24} /> : <XCircle size={24} />}
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white leading-relaxed">{q.title}</h3>
+                      <div className="prose dark:prose-invert max-w-none font-bold text-slate-900 dark:text-white leading-relaxed" dangerouslySetInnerHTML={{ __html: q.title }} />
+                      {q.imageUrl && <img src={q.imageUrl} alt="Question" loading="lazy" className="mt-2 max-h-32 rounded-lg object-contain" />}
                       <span className="text-xs font-bold text-slate-400 mt-1 block">1 Mark</span>
                     </div>
                   </div>
@@ -182,9 +183,7 @@ export default function Result() {
                         <Zap size={16} />
                         Explanation:
                       </div>
-                      <div className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed prose dark:prose-invert max-w-none">
-                        <ReactMarkdown>{q.explanation}</ReactMarkdown>
-                      </div>
+                      <div className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: q.explanation }} />
                     </div>
                   </div>
                 )}

@@ -2,10 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
-import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2 } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI, Type } from "@google/genai";
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
+import { lazy, Suspense } from 'react';
+
+const QuizBuilder = lazy(() => import('../components/admin/QuizBuilder'));
 
 // Set PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -280,6 +285,7 @@ export default function Admin() {
 
   // Question Form
   const [showQuestionForm, setShowQuestionForm] = useState(false);
+  const [showQuizBuilder, setShowQuizBuilder] = useState(false);
   const [questionForm, setQuestionForm] = useState<Partial<Question>>({
     subjectId: '',
     sectionId: '',
@@ -1080,14 +1086,33 @@ export default function Admin() {
                 </div>
               )}
             </div>
-            <button
-              onClick={() => setShowQuestionForm(true)}
-              className="flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all"
-            >
-              <Plus size={20} />
-              Add Question
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowQuizBuilder(true)}
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-black text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-1 transition-all active:scale-95"
+              >
+                <Wand2 size={18} />
+                Quiz Builder Wizard
+              </button>
+              <button
+                onClick={() => setShowQuestionForm(true)}
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-sm shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-1 transition-all active:scale-95"
+              >
+                <Plus size={18} />
+                Add Single Question
+              </button>
+            </div>
           </div>
+
+          {showQuizBuilder && (
+            <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-blue-600" size={40} /></div>}>
+              <QuizBuilder 
+                subjects={subjects} 
+                sections={sections} 
+                onClose={() => setShowQuizBuilder(false)} 
+              />
+            </Suspense>
+          )}
 
           {/* File Upload Section */}
           <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm mb-10">
@@ -1204,7 +1229,8 @@ export default function Admin() {
                         {q.difficulty}
                       </span>
                     </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white text-base leading-snug truncate">{q.title}</h3>
+                    <div className="prose dark:prose-invert max-w-none text-base font-bold text-slate-900 dark:text-white leading-snug line-clamp-2 mb-2" dangerouslySetInnerHTML={{ __html: q.title }} />
+                    {q.imageUrl && <img src={q.imageUrl} alt="Question" loading="lazy" className="h-20 rounded-lg mb-2 object-cover" />}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1218,7 +1244,8 @@ export default function Admin() {
                         options: q.options,
                         correctAnswer: q.correctAnswer,
                         explanation: q.explanation,
-                        difficulty: q.difficulty
+                        difficulty: q.difficulty,
+                        imageUrl: q.imageUrl
                       });
                       setShowQuestionForm(true);
                     }}
@@ -1392,14 +1419,14 @@ export default function Admin() {
 
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Question Content</label>
-                  <textarea
-                    required
-                    rows={3}
-                    value={questionForm.title}
-                    onChange={(e) => setQuestionForm({ ...questionForm, title: e.target.value })}
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold resize-none"
-                    placeholder="Enter the question text here..."
-                  />
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                    <ReactQuill 
+                      theme="snow"
+                      value={questionForm.title || ''}
+                      onChange={(content) => setQuestionForm({ ...questionForm, title: content })}
+                      className="h-32 mb-12"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1446,13 +1473,14 @@ export default function Admin() {
 
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Explanation (Optional)</label>
-                  <textarea
-                    rows={4}
-                    value={questionForm.explanation}
-                    onChange={(e) => setQuestionForm({ ...questionForm, explanation: e.target.value })}
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold resize-none"
-                    placeholder="Provide context for the correct answer..."
-                  />
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                    <ReactQuill 
+                      theme="snow"
+                      value={questionForm.explanation || ''}
+                      onChange={(content) => setQuestionForm({ ...questionForm, explanation: content })}
+                      className="h-32 mb-12"
+                    />
+                  </div>
                 </div>
 
                 <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
