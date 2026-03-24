@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
 import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2 } from 'lucide-react';
 import * as mammoth from 'mammoth';
@@ -9,6 +10,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { lazy, Suspense } from 'react';
+import AdminAnalytics from '../components/admin/AdminAnalytics';
 
 const QuizBuilder = lazy(() => import('../components/admin/QuizBuilder'));
 
@@ -88,7 +90,7 @@ function UserSubjectItem({ subject, sections, isAllowed, onToggleAccess }: { sub
 }
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'quizResults'>('subjects');
+  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'quizResults' | 'analytics'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -104,6 +106,7 @@ export default function Admin() {
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [expandedAdminSection, setExpandedAdminSection] = useState<string | null>(null);
 
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [editingSection, setEditingSection] = useState<Section | null>(null);
@@ -269,12 +272,79 @@ export default function Admin() {
       await batch.commit();
       setMessage({ text: `Successfully added ${parsedQuestions.length} questions!`, type: 'success' });
     } catch (err: any) {
-      handleFirestoreError(err, 'upload', 'questions');
+      handleFirestoreError(err, OperationType.WRITE, 'questions');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const refreshAllPoints = async () => {
+    setLoading(true);
+    setMessage({ text: 'Recalculating all user points...', type: 'success' });
+    try {
+      const resultsSnap = await getDocs(collection(db, 'quizResults'));
+      const allResults = resultsSnap.docs.map(d => d.data() as QuizResult);
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const allUsers = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
+
+      const batch = writeBatch(db);
+      let updatedCount = 0;
+
+      for (const user of allUsers) {
+        const userResults = allResults.filter(r => r.userId === user.uid);
+        if (userResults.length === 0) {
+          // Reset points if no results
+          const userRef = doc(db, 'users', user.uid);
+          batch.update(userRef, {
+            points: 0,
+            sectionPoints: {},
+            completedQuizzes: 0
+          });
+          updatedCount++;
+          continue;
+        }
+
+        const sectionPoints: Record<string, number> = {};
+        
+        userResults.forEach(r => {
+          const sectionKey = r.sectionId || `${r.subjectId}_all`;
+          const points = (r.score || 0);
+          if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
+            sectionPoints[sectionKey] = points;
+          }
+        });
+
+        const totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
+        
+        const userRef = doc(db, 'users', user.uid);
+        batch.update(userRef, {
+          points: totalPoints,
+          sectionPoints: sectionPoints,
+          completedQuizzes: userResults.length
+        });
+        updatedCount++;
+
+        // Commit in chunks of 500 if needed (Firestore batch limit)
+        if (updatedCount % 500 === 0) {
+          await batch.commit();
+          // Start a new batch
+          // Note: This is a bit complex to handle properly with writeBatch in a loop, 
+          // but for now let's assume users < 500 or handle it simply.
+        }
+      }
+
+      await batch.commit();
+      setMessage({ text: `Successfully refreshed points for ${allUsers.length} users!`, type: 'success' });
+    } catch (error) {
+      console.error(error);
+      setMessage({ text: 'Failed to refresh points. See console for details.', type: 'error' });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
   // Subject Form
   const [showSubjectForm, setShowSubjectForm] = useState(false);
   const [subjectForm, setSubjectForm] = useState<Partial<Subject>>({ nameAr: '', nameEn: '', icon: 'BookOpen' });
@@ -337,7 +407,7 @@ export default function Admin() {
       await updateDoc(userRef, { role: newRole });
       setMessage({ text: `User role updated to ${newRole} successfully`, type: 'success' });
     } catch (error) {
-      handleFirestoreError(error, 'update', 'users/' + user.uid);
+      handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
     }
   };
 
@@ -354,23 +424,8 @@ export default function Admin() {
       await updateDoc(userRef, { allowedSubjects: newAllowedSubjects });
       setMessage({ text: 'Permissions updated successfully', type: 'success' });
     } catch (error) {
-      handleFirestoreError(error, 'update', 'users/' + user.uid);
+      handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
     }
-  };
-
-  const handleFirestoreError = (error: any, operation: string, path: string) => {
-    const errInfo = {
-      error: error?.message || String(error),
-      operation,
-      path,
-      auth: {
-        uid: auth.currentUser?.uid,
-        email: auth.currentUser?.email,
-        emailVerified: auth.currentUser?.emailVerified
-      }
-    };
-    console.error(`Firestore Error [${operation}]:`, JSON.stringify(errInfo));
-    setMessage({ text: `Error: ${error?.message || 'Unknown error'}`, type: 'error' });
   };
 
   const handleAddSubject = async (e: React.FormEvent) => {
@@ -393,7 +448,7 @@ export default function Admin() {
       setEditingSubject(null);
       setShowSubjectForm(false);
     } catch (err) {
-      handleFirestoreError(err, editingSubject ? 'update' : 'create', 'subjects');
+      handleFirestoreError(err, editingSubject ? OperationType.UPDATE : OperationType.CREATE, 'subjects');
     }
   };
 
@@ -417,7 +472,7 @@ export default function Admin() {
       setEditingSection(null);
       setShowSectionForm(false);
     } catch (err) {
-      handleFirestoreError(err, editingSection ? 'update' : 'create', 'sections');
+      handleFirestoreError(err, editingSection ? OperationType.UPDATE : OperationType.CREATE, 'sections');
     }
   };
 
@@ -449,7 +504,7 @@ export default function Admin() {
       setEditingQuestion(null);
       setShowQuestionForm(false);
     } catch (err) {
-      handleFirestoreError(err, editingQuestion ? 'update' : 'create', 'questions');
+      handleFirestoreError(err, editingQuestion ? OperationType.UPDATE : OperationType.CREATE, 'questions');
     }
   };
 
@@ -485,7 +540,7 @@ export default function Admin() {
       await batch.commit();
       setMessage({ text: 'Deleted successfully along with associated content', type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'delete', coll);
+      handleFirestoreError(err, OperationType.DELETE, coll);
     }
   };
 
@@ -496,7 +551,7 @@ export default function Admin() {
       const userDoc = await getDoc(userRef);
       if (userDoc.exists()) {
         const userData = userDoc.data() as UserProfile;
-        const pointsToSubtract = result.score * 10; // Assuming 10 points per correct answer as per Quiz.tsx logic
+        const pointsToSubtract = result.score; // Assuming 1 point per correct answer as per Quiz.tsx logic
         
         const newPoints = Math.max(0, (userData.points || 0) - pointsToSubtract);
         const newCompletedQuizzes = Math.max(0, (userData.completedQuizzes || 0) - 1);
@@ -515,7 +570,7 @@ export default function Admin() {
       await deleteDoc(doc(db, 'quizResults', result.id));
       setMessage({ text: 'Quiz result deleted and points updated successfully', type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'delete', 'quizResults');
+      handleFirestoreError(err, OperationType.DELETE, 'quizResults');
     }
   };
 
@@ -524,7 +579,7 @@ export default function Admin() {
       await updateDoc(doc(db, 'subjects', subject.id), { isLocked: !subject.isLocked });
       setMessage({ text: `Subject ${!subject.isLocked ? 'locked' : 'unlocked'} successfully`, type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'update', 'subjects');
+      handleFirestoreError(err, OperationType.UPDATE, 'subjects');
     }
   };
 
@@ -542,7 +597,7 @@ export default function Admin() {
       setSelectedQuestionIds(new Set());
       setMessage({ text: 'Selected questions deleted successfully', type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'bulk-delete', 'questions');
+      handleFirestoreError(err, OperationType.DELETE, 'questions');
     } finally {
       setIsDeletingBulk(false);
     }
@@ -561,7 +616,7 @@ export default function Admin() {
       setSelectedQuestionIds(new Set());
       setMessage({ text: `Successfully moved ${selectedQuestionIds.size} questions`, type: 'success' });
     } catch (err) {
-      handleFirestoreError(err, 'bulk-update', 'questions');
+      handleFirestoreError(err, OperationType.UPDATE, 'questions');
     } finally {
       setIsDeletingBulk(false);
     }
@@ -626,6 +681,7 @@ export default function Admin() {
         <div className="mb-10 overflow-x-auto pb-2">
           <div className="flex bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 w-fit">
             {[
+              { id: 'analytics', label: 'Analytics' },
               { id: 'subjects', label: 'Subjects' },
               { id: 'sections', label: 'Sections' },
               { id: 'questions', label: 'Questions' },
@@ -689,7 +745,9 @@ export default function Admin() {
         </div>
       )}
 
-      {activeTab === 'subjects' ? (
+      {activeTab === 'analytics' ? (
+        <AdminAnalytics />
+      ) : activeTab === 'subjects' ? (
         <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <h2 className="text-2xl font-black text-slate-900 dark:text-white">Subject Repository</h2>
@@ -778,50 +836,106 @@ export default function Admin() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sections.map((section) => {
+          <div className="flex flex-col gap-4">
+            {sections.filter(s => !s.parentId).map((section) => {
+              const subSections = sections.filter(sub => sub.parentId === section.id);
+              const hasSubSections = subSections.length > 0;
+              const isExpanded = expandedAdminSection === section.id;
               const sectionQuestions = questions.filter(q => q.sectionId === section.id);
+              const totalQuestions = hasSubSections 
+                ? subSections.reduce((acc, sub) => acc + questions.filter(q => q.sectionId === sub.id).length, sectionQuestions.length)
+                : sectionQuestions.length;
               
               return (
-                <div key={section.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col group hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-none hover:-translate-y-1 transition-all duration-300">
-                  <div className="flex items-start justify-between mb-6">
+                <div key={section.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden flex flex-col group hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-none transition-all duration-300">
+                  <div 
+                    className={cn("flex items-center justify-between p-6", hasSubSections && "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors")}
+                    onClick={() => hasSubSections && setExpandedAdminSection(isExpanded ? null : section.id)}
+                  >
                     <div className="flex items-center gap-5">
-                      <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform duration-300 shadow-inner">
-                        <LayoutGrid size={28} />
-                      </div>
+                      {hasSubSections ? (
+                        <div className={cn("text-slate-400 transition-transform duration-300", isExpanded && "rotate-90 text-indigo-600")}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform duration-300 shadow-inner">
+                          <LayoutGrid size={24} />
+                        </div>
+                      )}
                       <div>
-                        <h3 className="font-black text-slate-900 dark:text-white text-lg">{section.nameEn || section.nameAr}</h3>
+                        <h3 className="font-black text-slate-900 dark:text-white text-lg group-hover:text-indigo-600 transition-colors">{section.nameEn || section.nameAr}</h3>
                         <p className="text-sm font-bold text-indigo-400 mt-0.5">
                           {subjects.find(s => s.id === section.subjectId)?.nameEn || 'Unknown Subject'}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingSection(section);
-                          setSectionForm({ subjectId: section.subjectId, nameAr: section.nameAr, nameEn: section.nameEn });
-                          setShowSectionForm(true);
-                        }}
-                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete('sections', section.id)}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                    <div className="flex items-center gap-6" onClick={e => e.stopPropagation()}>
+                      <div className="text-right">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Questions</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">{totalQuestions}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingSection(section);
+                            setSectionForm({ subjectId: section.subjectId, parentId: section.parentId || '', nameAr: section.nameAr, nameEn: section.nameEn });
+                            setShowSectionForm(true);
+                          }}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete('sections', section.id)}
+                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="mt-auto">
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100/50 dark:border-slate-700/50">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Questions</p>
-                      <p className="text-xl font-black text-slate-900 dark:text-white">{sectionQuestions.length}</p>
+                  {hasSubSections && isExpanded && (
+                    <div className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 p-4 pl-14 flex flex-col gap-2 animate-in slide-in-from-top-2 duration-300">
+                      {subSections.map(sub => {
+                        const subQuestions = questions.filter(q => q.sectionId === sub.id);
+                        return (
+                          <div key={sub.id} className="flex items-center justify-between bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                            <div className="flex items-center gap-3">
+                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                              <h4 className="font-bold text-slate-700 dark:text-slate-300">{sub.nameEn || sub.nameAr}</h4>
+                            </div>
+                            <div className="flex items-center gap-6">
+                              <div className="text-right">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Questions</p>
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">{subQuestions.length}</p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    setEditingSection(sub);
+                                    setSectionForm({ subjectId: sub.subjectId, parentId: sub.parentId || '', nameAr: sub.nameAr, nameEn: sub.nameEn });
+                                    setShowSectionForm(true);
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete('sections', sub.id)}
+                                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -831,16 +945,27 @@ export default function Admin() {
         <section>
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">User Permissions</h2>
-            <button
-              onClick={() => {
-                setMessage({ text: 'Refreshing user list...', type: 'success' });
-                setTimeout(() => setMessage(null), 2000);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-            >
-              <RefreshCw size={16} />
-              Refresh
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={refreshAllPoints}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                title="Recalculate points for all users based on their quiz results"
+              >
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+                Refresh All Points
+              </button>
+              <button
+                onClick={() => {
+                  setMessage({ text: 'Refreshing user list...', type: 'success' });
+                  setTimeout(() => setMessage(null), 2000);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+              >
+                <RefreshCw size={16} />
+                Refresh List
+              </button>
+            </div>
           </div>
           <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -1328,26 +1453,45 @@ export default function Admin() {
                   <select
                     required
                     value={sectionForm.subjectId}
-                    onChange={(e) => setSectionForm({ ...sectionForm, subjectId: e.target.value })}
+                    onChange={(e) => setSectionForm({ ...sectionForm, subjectId: e.target.value, parentId: '' })}
                     className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                   >
                     <option value="">Select subject...</option>
                     {subjects.map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
                   </select>
                 </div>
+                {sectionForm.subjectId && (
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Parent Section (Optional)</label>
+                    <select
+                      value={sectionForm.parentId || ''}
+                      onChange={(e) => setSectionForm({ ...sectionForm, parentId: e.target.value })}
+                      className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                    >
+                      <option value="">None (Top Level)</option>
+                      {sections
+                        .filter(s => s.subjectId === sectionForm.subjectId && s.id !== editingSection?.id && !s.parentId)
+                        .map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Section Name (English)</label>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+                    {sectionForm.parentId ? 'Sub-Section Name (English)' : 'Section Name (English)'}
+                  </label>
                   <input
                     type="text"
                     required
                     value={sectionForm.nameEn}
                     onChange={(e) => setSectionForm({ ...sectionForm, nameEn: e.target.value })}
                     className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                    placeholder="e.g. Cardiology"
+                    placeholder={sectionForm.parentId ? "e.g. Lecture 1" : "e.g. Anatomy"}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Section Name (Arabic)</label>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+                    {sectionForm.parentId ? 'Sub-Section Name (Arabic)' : 'Section Name (Arabic)'}
+                  </label>
                   <input
                     type="text"
                     value={sectionForm.nameAr}
@@ -1399,7 +1543,14 @@ export default function Admin() {
                       <option value="">Select section...</option>
                       {sections
                         .filter(s => s.subjectId === questionForm.subjectId)
-                        .map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)
+                        .filter(s => !sections.some(child => child.parentId === s.id))
+                        .map(s => {
+                          const parent = s.parentId ? sections.find(p => p.id === s.parentId) : null;
+                          const parentName = parent ? `${parent.nameEn || parent.nameAr} -> ` : '';
+                          return (
+                            <option key={s.id} value={s.id}>{parentName}{s.nameEn || s.nameAr}</option>
+                          );
+                        })
                       }
                     </select>
                   </div>

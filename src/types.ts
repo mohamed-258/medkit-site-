@@ -26,6 +26,7 @@ export interface Subject {
 export interface Section {
   id: string;
   subjectId: string;
+  parentId?: string;
   nameAr?: string;
   nameEn?: string;
 }

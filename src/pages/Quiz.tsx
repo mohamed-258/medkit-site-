@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { useAuth } from '../App';
-import { Question, Subject, QuizResult } from '../types';
-import { BookOpen, Clock, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, ArrowLeft, Trophy, Zap, Star, LayoutGrid, Flag } from 'lucide-react';
+import { Question, Subject, QuizResult, Section } from '../types';
+import { BookOpen, Clock, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, ArrowLeft, Trophy, Zap, Star, LayoutGrid, Flag, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
@@ -30,14 +31,98 @@ export default function Quiz() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sectionQuestionCounts, setSectionQuestionCounts] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState(false);
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<number>>(new Set());
   const [visitedQuestions, setVisitedQuestions] = useState<Set<number>>(new Set([0]));
   const [showResumeModal, setShowResumeModal] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [savedProgress, setSavedProgress] = useState<any>(null);
   const [pendingSectionId, setPendingSectionId] = useState<string | undefined>(undefined);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleAnswer = useCallback((optionIdx: number) => {
+    if (isFinished) return;
+    setSelectedAnswers(prev => ({ ...prev, [currentIdx]: optionIdx }));
+  }, [currentIdx, isFinished]);
+
+  const toggleFlag = useCallback((idx: number) => {
+    if (isFinished) return;
+    setFlaggedQuestions(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }, [isFinished]);
+
+  const handleSubmit = useCallback(async () => {
+    if (submitting || isFinished) return;
+    setSubmitting(true);
+    setIsFinished(true);
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    // Clear saved progress
+    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${selectedSectionId || 'all'}`;
+    localStorage.removeItem(key);
+
+    let score = 0;
+    questions.forEach((q, i) => {
+      if (selectedAnswers[i] === q.correctAnswer) {
+        score++;
+      }
+    });
+
+    const resultId = Math.random().toString(36).substring(7);
+    const resultData: QuizResult = {
+      id: resultId,
+      userId: profile!.uid,
+      subjectId: subjectId!,
+      sectionId: selectedSectionId || undefined,
+      score,
+      totalQuestions: questions.length,
+      timestamp: new Date().toISOString(),
+      questions,
+      selectedAnswers,
+    };
+
+    try {
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6']
+      });
+
+      // Save result
+      await addDoc(collection(db, 'quizResults'), resultData);
+      
+      // Update user profile
+      const userRef = doc(db, 'users', profile!.uid);
+      const sectionKey = selectedSectionId || `${subjectId}_all`;
+      const currentSectionPoints = profile!.sectionPoints?.[sectionKey] || 0;
+      const newPoints = score;
+      
+      const updates: any = {
+        completedQuizzes: increment(1)
+      };
+
+      let pointsEarned = 0;
+      if (newPoints > currentSectionPoints) {
+        pointsEarned = newPoints - currentSectionPoints;
+        updates.points = increment(pointsEarned);
+        updates[`sectionPoints.${sectionKey}`] = newPoints;
+      }
+
+      await updateDoc(userRef, updates);
+
+      navigate(`/result/${resultId}`, { state: { result: resultData, questions, selectedAnswers, pointsEarned } });
+    } catch (err) {
+      console.error(err);
+      setSubmitting(false);
+    }
+  }, [profile, subjectId, selectedSectionId, questions, selectedAnswers, submitting, isFinished, navigate]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -78,7 +163,7 @@ export default function Quiz() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIdx, questions, isFinished, showResumeModal, showSectionSelection, loading]);
+  }, [currentIdx, questions, isFinished, showResumeModal, showSectionSelection, loading, handleAnswer, toggleFlag]);
 
   useEffect(() => {
     if (questions.length > 0) {
@@ -113,8 +198,22 @@ export default function Quiz() {
           
           // Fetch sections
           const sectionsSnap = await getDocs(query(collection(db, 'sections'), where('subjectId', '==', currentSubject.id)));
-          const sectionsList = sectionsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+          const sectionsList = sectionsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Section));
           setSections(sectionsList);
+
+          // Fetch question counts for each section
+          const counts: Record<string, number> = {};
+          const allQuestionsSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', currentSubject.id)));
+          const allQuestions = allQuestionsSnap.docs.map(d => d.data() as Question);
+          
+          // Count for "All Sections"
+          counts['all'] = allQuestions.length;
+          
+          // Count for each specific section
+          sectionsList.forEach(section => {
+            counts[section.id] = allQuestions.filter(q => q.sectionId === section.id).length;
+          });
+          setSectionQuestionCounts(counts);
           
           if (sectionsList.length > 0) {
             setShowSectionSelection(true);
@@ -155,8 +254,26 @@ export default function Quiz() {
       let qList: Question[] = [];
       
       if (sectionId) {
-        const qSnap = await getDocs(query(collection(db, 'questions'), where('sectionId', '==', sectionId)));
-        qList = qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
+        // Find if this section has sub-sections
+        const subSections = sections.filter(s => s.parentId === sectionId);
+        if (subSections.length > 0) {
+          // It's a parent section, fetch questions for parent and all sub-sections
+          const sectionIds = [sectionId, ...subSections.map(s => s.id)];
+          
+          // Fetch all subject questions and filter (safer than 'in' query if > 10 subsections)
+          const qSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', sId)));
+          let allQList = qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
+          
+          if (allQList.length === 0 && firestoreId) {
+            const qSnapFirestore = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', firestoreId)));
+            allQList = qSnapFirestore.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
+          }
+          
+          qList = allQList.filter(q => sectionIds.includes(q.sectionId || ''));
+        } else {
+          const qSnap = await getDocs(query(collection(db, 'questions'), where('sectionId', '==', sectionId)));
+          qList = qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
+        }
       } else {
         // Fetch questions - try both manual ID and Firestore ID for subjectId
         const qSnapManual = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', sId)));
@@ -178,30 +295,11 @@ export default function Quiz() {
       setLoading(false);
       setShowSectionSelection(false);
     } catch (err: any) {
-      handleFirestoreError(err, 'get', 'questions');
+      handleFirestoreError(err, OperationType.GET, 'questions');
       setLoading(false);
     }
   };
 
-  const handleFirestoreError = (error: any, operation: string, path: string) => {
-    const errInfo = {
-      error: error?.message || String(error),
-      operation,
-      path,
-      auth: {
-        uid: auth.currentUser?.uid,
-        email: auth.currentUser?.email,
-        emailVerified: auth.currentUser?.emailVerified
-      }
-    };
-    console.error(`Firestore Error [${operation}]:`, JSON.stringify(errInfo));
-    // Check for permission error
-    if (errInfo.error.includes('permission-denied') || errInfo.error.includes('Missing or insufficient permissions')) {
-      setMessage('You are not authorized to access these questions.');
-    } else {
-      setMessage(`Error: ${error?.message || 'Unknown error'}`);
-    }
-  };
   const [message, setMessage] = useState<string | null>(null);
 
   const handleStartQuiz = (sectionId?: string) => {
@@ -278,89 +376,7 @@ export default function Quiz() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [timeLeft, isFinished, loading]);
-
-  const handleAnswer = (optionIdx: number) => {
-    if (isFinished) return;
-    setSelectedAnswers(prev => ({ ...prev, [currentIdx]: optionIdx }));
-  };
-
-  const toggleFlag = (idx: number) => {
-    if (isFinished) return;
-    setFlaggedQuestions(prev => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
-  };
-
-  const handleSubmit = async () => {
-    if (submitting || isFinished) return;
-    setSubmitting(true);
-    setIsFinished(true);
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    // Clear saved progress
-    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${selectedSectionId || 'all'}`;
-    localStorage.removeItem(key);
-
-    let score = 0;
-    questions.forEach((q, i) => {
-      if (selectedAnswers[i] === q.correctAnswer) {
-        score++;
-      }
-    });
-
-    const resultId = Math.random().toString(36).substring(7);
-    const resultData: QuizResult = {
-      id: resultId,
-      userId: profile!.uid,
-      subjectId: subjectId!,
-      sectionId: selectedSectionId || undefined,
-      score,
-      totalQuestions: questions.length,
-      timestamp: new Date().toISOString(),
-      questions,
-      selectedAnswers,
-    };
-
-    try {
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6']
-      });
-
-      // Save result
-      await addDoc(collection(db, 'quizResults'), resultData);
-      
-      // Update user profile
-      const userRef = doc(db, 'users', profile!.uid);
-      const sectionKey = selectedSectionId || `${subjectId}_all`;
-      const currentSectionPoints = profile!.sectionPoints?.[sectionKey] || 0;
-      const newPoints = score * 10;
-      
-      const updates: any = {
-        completedQuizzes: increment(1)
-      };
-
-      let pointsEarned = 0;
-      if (newPoints > currentSectionPoints) {
-        pointsEarned = newPoints - currentSectionPoints;
-        updates.points = increment(pointsEarned);
-        updates[`sectionPoints.${sectionKey}`] = newPoints;
-      }
-
-      await updateDoc(userRef, updates);
-
-      navigate(`/result/${resultId}`, { state: { result: resultData, questions, selectedAnswers, pointsEarned } });
-    } catch (err) {
-      console.error(err);
-      setSubmitting(false);
-    }
-  };
+  }, [timeLeft, isFinished, loading, handleSubmit]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -428,47 +444,110 @@ export default function Quiz() {
         <p className="text-slate-500 dark:text-slate-400">Select a specific section to focus on, or take a quiz on all sections.</p>
       </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="flex flex-col gap-4">
         <button
           onClick={() => handleStartQuiz()}
-          className="p-8 bg-blue-600 text-white rounded-[2rem] shadow-xl shadow-blue-500/20 text-left group transition-all duration-300 hover:-translate-y-1"
+          className="p-6 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-500/20 text-left group transition-all duration-300 hover:-translate-y-1 flex items-center justify-between"
         >
-          <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-            <LayoutGrid size={24} />
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+              <LayoutGrid size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">All Sections</h3>
+              <p className="text-blue-100 text-sm">Test your knowledge across the entire subject.</p>
+            </div>
           </div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xl font-bold">All Sections</h3>
+          <div className="flex items-center gap-3">
+            <div className="text-xs font-bold text-blue-200 bg-blue-500/50 px-3 py-1.5 rounded-lg">
+              {sectionQuestionCounts['all'] || 0} Questions
+            </div>
             {profile?.sectionPoints?.[`${subjectId}_all`] !== undefined && (
-              <div className="flex items-center gap-1 text-sm font-bold text-blue-200 bg-blue-500/50 px-2 py-1 rounded-lg">
+              <div className="flex items-center gap-1 text-sm font-bold text-blue-200 bg-blue-500/50 px-3 py-1.5 rounded-lg">
                 <Star size={14} fill="currentColor" />
                 {profile.sectionPoints[`${subjectId}_all`]}
               </div>
             )}
           </div>
-          <p className="text-blue-100 text-sm">Test your knowledge across the entire subject.</p>
         </button>
 
-        {sections.map((section) => (
-          <button
-            key={section.id}
-            onClick={() => handleStartQuiz(section.id)}
-            className="p-8 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2rem] shadow-sm hover:shadow-xl hover:border-blue-200 dark:hover:border-blue-900 text-left group transition-all duration-300 hover:-translate-y-1"
-          >
-            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center mb-6 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
-              <BookOpen size={24} />
-            </div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white">{section.nameEn || section.nameAr}</h3>
-              {profile?.sectionPoints?.[section.id] !== undefined && (
-                <div className="flex items-center gap-1 text-sm font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">
-                  <Star size={14} fill="currentColor" />
-                  {profile.sectionPoints[section.id]}
+        {sections.filter(s => !s.parentId).map((section) => {
+          const subSections = sections.filter(sub => sub.parentId === section.id);
+          const hasSubSections = subSections.length > 0;
+          const isExpanded = expandedSection === section.id;
+          
+          // Calculate total questions for parent section including its subsections
+          const totalQuestions = hasSubSections 
+            ? subSections.reduce((acc, sub) => acc + (sectionQuestionCounts[sub.id] || 0), sectionQuestionCounts[section.id] || 0)
+            : (sectionQuestionCounts[section.id] || 0);
+
+          return (
+            <div key={section.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-all duration-300">
+              <button
+                onClick={() => hasSubSections ? setExpandedSection(isExpanded ? null : section.id) : handleStartQuiz(section.id)}
+                className="w-full p-5 text-left group flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+              >
+                <div className="flex items-center gap-4">
+                  {hasSubSections ? (
+                    <div className={cn("text-slate-400 transition-transform duration-300", isExpanded && "rotate-90 text-blue-600")}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center text-blue-600">
+                      <BookOpen size={16} />
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors">{section.nameEn || section.nameAr}</h3>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">{section.nameEn && section.nameAr ? section.nameAr : 'Practice this section specifically.'}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <div className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg">
+                    {hasSubSections ? `${subSections.length} Sub-sections` : `${totalQuestions} Questions`}
+                  </div>
+                  {profile?.sectionPoints?.[section.id] !== undefined && !hasSubSections && (
+                    <div className="flex items-center gap-1 text-sm font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">
+                      <Star size={14} fill="currentColor" />
+                      {profile.sectionPoints[section.id]}
+                    </div>
+                  )}
+                </div>
+              </button>
+              
+              {hasSubSections && isExpanded && (
+                <div className="px-5 pb-5 pt-2 grid grid-cols-1 gap-2 animate-in slide-in-from-top-2 duration-300 pl-14">
+                  {subSections.map(sub => (
+                    <button
+                      key={sub.id}
+                      onClick={() => handleStartQuiz(sub.id)}
+                      className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-slate-100 dark:border-slate-700 rounded-xl text-left transition-all flex items-center justify-between group/sub shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 opacity-50 group-hover/sub:opacity-100 transition-opacity" />
+                        <span className="font-bold text-slate-700 dark:text-slate-300 group-hover/sub:text-blue-600 dark:group-hover/sub:text-blue-400">{sub.nameEn || sub.nameAr}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-[10px] font-bold text-slate-400 bg-white dark:bg-slate-900 px-2 py-1 rounded-lg">
+                          {sectionQuestionCounts[sub.id] || 0} Questions
+                        </div>
+                        {profile?.sectionPoints?.[sub.id] !== undefined && (
+                          <div className="flex items-center gap-1 text-sm font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">
+                            <Star size={14} fill="currentColor" />
+                            {profile.sectionPoints[sub.id]}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">{section.nameEn && section.nameAr ? section.nameAr : 'Practice this section specifically.'}</p>
-          </button>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-12 text-center">

@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import SubjectCard from '../components/SubjectCard';
+import StudentAnalytics from '../components/student/StudentAnalytics';
 
 export default function Dashboard() {
   const { profile } = useAuth();
@@ -280,30 +281,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {showLockedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl max-w-sm w-full text-center border border-slate-100 dark:border-slate-800"
-          >
-            <div className="w-20 h-20 bg-amber-50 dark:bg-amber-900/20 rounded-[2rem] flex items-center justify-center text-amber-500 mx-auto mb-8 shadow-inner">
-              <Lock size={40} />
-            </div>
-            <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-4">Subject Locked</h3>
-            <p className="text-slate-600 dark:text-slate-400 mb-10 leading-relaxed">
-              Premium subjects are exclusive to our members. Contact <a href="http://t.me/MEDKIT01" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-black hover:underline">@MEDKIT01</a> on Telegram to unlock.
-            </p>
-            <button 
-              onClick={() => setShowLockedModal(false)}
-              className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black transition-all shadow-xl shadow-blue-500/25 active:scale-95"
-            >
-              Got it
-            </button>
-          </motion.div>
-        </div>
-      )}
     </div>
   );
 
@@ -419,7 +396,8 @@ export default function Dashboard() {
       {currentTab === 'dashboard' && renderDashboard()}
       {currentTab === 'subjects' && renderSubjects()}
       {currentTab === 'profile' && renderProfile()}
-      {(currentTab === 'quizzes' || currentTab === 'progress') && (
+      {currentTab === 'progress' && <StudentAnalytics />}
+      {currentTab === 'quizzes' && (
         <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
           <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center text-blue-600">
             <Activity size={40} />
@@ -429,6 +407,34 @@ export default function Dashboard() {
           <Link to="/dashboard" className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20">Back to Dashboard</Link>
         </div>
       )}
+
+      <AnimatePresence>
+        {showLockedModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl max-w-sm w-full text-center border border-slate-100 dark:border-slate-800 relative"
+            >
+              <div className="w-20 h-20 bg-amber-50 dark:bg-amber-900/20 rounded-[2rem] flex items-center justify-center text-amber-500 mx-auto mb-8 shadow-inner">
+                <Lock size={40} />
+              </div>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-4">Subject Locked</h3>
+              <p className="text-slate-600 dark:text-slate-400 mb-10 leading-relaxed">
+                Premium subjects are exclusive to our members. Contact <a href="http://t.me/MEDKIT01" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-black hover:underline">@MEDKIT01</a> on Telegram to unlock.
+              </p>
+              <button 
+                onClick={() => setShowLockedModal(false)}
+                className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black transition-all shadow-xl shadow-blue-500/25 active:scale-95"
+              >
+                Got it
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
