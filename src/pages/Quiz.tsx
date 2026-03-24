@@ -295,8 +295,17 @@ export default function Quiz() {
       setLoading(false);
       setShowSectionSelection(false);
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.GET, 'questions');
-      setLoading(false);
+      try {
+        handleFirestoreError(err, OperationType.GET, 'questions');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage('Permission denied. The system is diagnosing the issue.');
+          throw firestoreErr;
+        }
+        setMessage(firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 

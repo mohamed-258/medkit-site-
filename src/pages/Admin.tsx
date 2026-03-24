@@ -119,55 +119,221 @@ export default function Admin() {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(' ');
-      fullText += pageText + '\n';
+      
+      let lastY = -1;
+      let pageText = '';
+      for (const item of textContent.items as any[]) {
+        if (lastY !== -1 && Math.abs(item.transform[5] - lastY) > 5) {
+          pageText += '\n';
+        }
+        pageText += item.str + ' ';
+        lastY = item.transform[5];
+      }
+      fullText += pageText + '\n\n';
     }
     return fullText;
   };
 
   const extractTextFromWord = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return result.value;
+    // Use convertToHtml to preserve list structures which extractRawText strips out
+    const result = await mammoth.convertToHtml({ arrayBuffer });
+    
+    // Create a temporary div to parse the HTML
+    const div = document.createElement('div');
+    div.innerHTML = result.value;
+    
+    let fullText = '';
+    let listCounter = 1;
+    let isOrderedList = false;
+
+    // Recursively process nodes to extract text with list numbers
+    const processNode = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        fullText += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        
+        if (el.tagName === 'P') {
+          fullText += '\n';
+        } else if (el.tagName === 'OL') {
+          isOrderedList = true;
+          listCounter = 1;
+        } else if (el.tagName === 'UL') {
+          isOrderedList = false;
+        } else if (el.tagName === 'LI') {
+          if (isOrderedList) {
+            fullText += `\n${listCounter}. `;
+            listCounter++;
+          } else {
+            // For unordered lists, we'll use letters A, B, C, D if it's a short list (likely options)
+            // But to be safe, we'll just use a bullet and let the parser handle it, or use A, B, C, D
+            fullText += `\n- `;
+          }
+        } else if (el.tagName === 'BR') {
+          fullText += '\n';
+        }
+        
+        for (let i = 0; i < el.childNodes.length; i++) {
+          processNode(el.childNodes[i]);
+        }
+        
+        if (el.tagName === 'P' || el.tagName === 'LI') {
+          fullText += '\n';
+        }
+      }
+    };
+    
+    processNode(div);
+    
+    // Fallback if HTML parsing yielded nothing useful
+    if (fullText.trim().length < 10) {
+      const rawResult = await mammoth.extractRawText({ arrayBuffer });
+      return rawResult.value;
+    }
+    
+    return fullText;
   };
 
   const parseQuestionsManually = (text: string): Partial<Question>[] => {
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const parsedQuestions: Partial<Question>[] = [];
-    let currentQuestion: Partial<Question> | null = null;
 
-    lines.forEach(line => {
-      // Check if line starts with a number followed by . or ) - likely a question
-      if (/^\d+[\.\)]/.test(line)) {
-        if (currentQuestion && currentQuestion.title && currentQuestion.options?.length! >= 2) {
-          parsedQuestions.push(currentQuestion);
+    // ── 1. نظف النص وقسمه لأسطر ─────────────────────────────────────
+    const lines = text
+      .split('\n')
+      .map(l => l.replace(/\r/g, '').trim())
+      .filter(l => l.length > 0);
+
+    // ── 2. Pattern يكشف بداية سؤال جديد ──────────────────────────────
+    // يدعم:  1.  1)  1-  Q1.  Q.1  السؤال1  ١.  (١)
+    const QUESTION_START = /^(?:Q\.?\s*)?(?:[٠-٩\d]+)[.)،\-\s]/i;
+
+    // ── 3. Pattern يكشف الخيارات ─────────────────────────────────────
+    // يدعم:  A.  A)  a.  أ.  أ)  ب.  ج-  1.  1)  (A)  (أ)
+    const OPTION_PATTERN =
+      /^(?:\(?\s*(?:[A-Da-dأ-دA-Da-d]|[1-4])\s*[.)،\-\)]\s*)/;
+
+    // ── 4. Pattern يكشف الإجابة في السطر الأخير ──────────────────────
+    // يدعم:  Answer: C   الإجابة: ب   Ans: 2   correct: a
+    const ANSWER_LINE =
+      /^(?:answer|ans|correct|الإجابة|الجواب|الصحيح)\s*[:=]\s*([A-Da-dأ-دA-Da-d1-4])/i;
+
+    // ── 5. تعريف ترتيب الحروف لمعرفة index الإجابة ───────────────────
+    const OPTION_INDEX: Record<string, number> = {
+      a: 0, b: 1, c: 2, d: 3,
+      A: 0, B: 1, C: 2, D: 3,
+      'أ': 0, 'ب': 1, 'ج': 2, 'د': 3,
+      '1': 0, '2': 1, '3': 2, '4': 3,
+    };
+
+    let current: Partial<Question> | null = null;
+
+    const pushCurrent = () => {
+      if (
+        current &&
+        current.title &&
+        current.title.trim().length > 3 &&
+        current.options &&
+        current.options.length >= 2
+      ) {
+        // تأكد أن correctAnswer منطقية
+        if (
+          current.correctAnswer === undefined ||
+          current.correctAnswer < 0 ||
+          current.correctAnswer >= (current.options?.length ?? 0)
+        ) {
+          current.correctAnswer = 0;
         }
-        currentQuestion = {
-          title: line.replace(/^\d+[\.\)]\s*/, ''),
+        parsedQuestions.push(current);
+      }
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // ── كشف سطر الإجابة (Answer: C) ─────────────────────────────
+      const ansMatch = line.match(ANSWER_LINE);
+      if (ansMatch && current) {
+        const key = ansMatch[1].trim();
+        const idx = OPTION_INDEX[key] ?? OPTION_INDEX[key.toLowerCase()] ?? -1;
+        if (idx !== -1) current.correctAnswer = idx;
+        continue;
+      }
+
+      // ── كشف بداية سؤال جديد ─────────────────────────────────────
+      if (QUESTION_START.test(line)) {
+        pushCurrent();
+        const questionText = line.replace(QUESTION_START, '').trim();
+        current = {
+          title: questionText,
           options: [],
           correctAnswer: 0,
           explanation: '',
-          difficulty: 'medium'
+          difficulty: 'medium',
         };
-      } 
-      // Check if line looks like an option (starts with A, B, C, D or a, b, c, d or 1, 2, 3, 4 followed by . or ))
-      else if (currentQuestion && /^[A-Da-dأ-د1-4][\.\)]/.test(line)) {
-        let optionText = line.replace(/^[A-Da-dأ-د1-4][\.\)]\s*/, '');
-        if (optionText.includes('*')) {
-          currentQuestion.correctAnswer = currentQuestion.options!.length;
-          optionText = optionText.replace('*', '').trim();
-        }
-        currentQuestion.options!.push(optionText);
+        continue;
       }
-      // If it's just text and we have a question but no options yet, it might be a multi-line question
-      else if (currentQuestion && currentQuestion.options!.length === 0) {
-        currentQuestion.title += ' ' + line;
-      }
-    });
 
-    if (currentQuestion && currentQuestion.title && currentQuestion.options?.length! >= 2) {
-      parsedQuestions.push(currentQuestion);
+      // ── كشف خيار ────────────────────────────────────────────────
+      if (current && OPTION_PATTERN.test(line)) {
+        let optionText = line.replace(OPTION_PATTERN, '').trim();
+
+        // هل فيه * في نهاية أو بداية الخيار = إجابة صحيحة؟
+        if (optionText.includes('*')) {
+          current.correctAnswer = current.options!.length;
+          optionText = optionText.replace(/\*/g, '').trim();
+        }
+
+        // هل الخيار نفسه مكتوب بعده ✓ أو (صح) ؟
+        if (/[✓✔☑]|صح|صحيح/.test(optionText)) {
+          current.correctAnswer = current.options!.length;
+          optionText = optionText.replace(/[✓✔☑]|صح|صحيح/g, '').trim();
+        }
+
+        current.options!.push(optionText);
+        continue;
+      }
+
+      // ── سطر الشرح / التفسير ──────────────────────────────────────
+      if (
+        current &&
+        /^(?:explanation|explain|تفسير|شرح|ملاحظة)\s*[:=]/i.test(line)
+      ) {
+        current.explanation = line
+          .replace(/^(?:explanation|explain|تفسير|شرح|ملاحظة)\s*[:=]\s*/i, '')
+          .trim();
+        continue;
+      }
+
+      // ── سطر الصعوبة ───────────────────────────────────────────────
+      if (
+        current &&
+        /^(?:difficulty|صعوبة)\s*[:=]\s*(easy|medium|hard|سهل|متوسط|صعب)/i.test(
+          line
+        )
+      ) {
+        const m = line.match(
+          /^(?:difficulty|صعوبة)\s*[:=]\s*(easy|medium|hard|سهل|متوسط|صعب)/i
+        )!;
+        const d = m[1].toLowerCase();
+        current.difficulty =
+          d === 'easy' || d === 'سهل'
+            ? 'easy'
+            : d === 'hard' || d === 'صعب'
+            ? 'hard'
+            : 'medium';
+        continue;
+      }
+
+      // ── سطر نص إضافي للسؤال (قبل الخيارات) ──────────────────────
+      if (current && current.options!.length === 0 && line.length > 2) {
+        // يضيف سطر إضافي لنص السؤال لو السؤال على أكثر من سطر
+        current.title += ' ' + line;
+      }
     }
+
+    // لا تنسى آخر سؤال
+    pushCurrent();
 
     return parsedQuestions;
   };
@@ -177,58 +343,104 @@ export default function Admin() {
     
     // Fallback to manual parsing if no API key or if it's the placeholder
     if (!apiKey || apiKey === 'MY_GEMINI_API_KEY' || apiKey.includes('AIzaSyCbxoj')) {
-      // Note: I'm checking for the key you sent just in case it's not yet in the environment
       console.log("Using manual free parser...");
       return parseQuestionsManually(text);
     }
 
     const ai = new GoogleGenAI({ apiKey });
     
-    const response = await ai.models.generateContent({
-      model: "gemini-flash-latest",
-      contents: `
-        Extract medical questions from the following text. 
-        The correct answer is marked with an asterisk (*).
-        Return a JSON array of objects with the following structure:
-        {
-          "title": "The question text",
-          "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-          "correctAnswer": 0, // index of the correct option (0-3)
-          "explanation": "Brief explanation if found, otherwise empty string",
-          "difficulty": "medium" // one of: easy, medium, hard
-        }
-        
-        Text:
-        ${text}
-      `,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              options: { 
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              correctAnswer: { type: Type.INTEGER },
-              explanation: { type: Type.STRING },
-              difficulty: { type: Type.STRING, enum: ['easy', 'medium', 'hard'] }
-            },
-            required: ["title", "options", "correctAnswer", "explanation", "difficulty"]
-          }
-        }
+    // Chunk the text to prevent Gemini from truncating long files
+    const lines = text.split('\n');
+    const chunks: string[] = [];
+    let currentChunk = '';
+    
+    for (const line of lines) {
+      // Break chunks safely around 10,000 characters to stay well within output token limits
+      if (currentChunk.length > 10000 && (/^\d+[\.\-\)]/.test(line.trim()) || /^(Q|Question|س|سؤال)\s*\d*[\.\-\:\)]/i.test(line.trim()))) {
+        chunks.push(currentChunk);
+        currentChunk = '';
+      } else if (currentChunk.length > 15000 && line.trim() === '') {
+        chunks.push(currentChunk);
+        currentChunk = '';
       }
-    });
-
-    try {
-      return JSON.parse(response.text || '[]');
-    } catch (e) {
-      console.error("Failed to parse Gemini response:", e);
-      return [];
+      currentChunk += line + '\n';
     }
+    if (currentChunk.trim().length > 0) {
+      chunks.push(currentChunk);
+    }
+
+    let allQuestions: Partial<Question>[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `
+            Extract ALL multiple-choice questions from the following text. 
+            
+            RULES:
+            1. The text contains questions followed by choices (A, B, C, D or أ، ب، ج، د).
+            2. The correct answer is marked with an asterisk (*) in the original text.
+            3. You MUST identify the correct answer based on this asterisk.
+            4. REMOVE the asterisk (*) from the final text of the option.
+            5. If a question has NO asterisk, skip it or mark it as invalid.
+            6. If a question has MULTIPLE asterisks, skip it or mark it as invalid.
+            7. Support both Arabic and English questions.
+            8. Return a JSON array of objects.
+
+            Structure:
+            [
+              {
+                "title": "The question text",
+                "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+                "correctAnswer": 0, // Index of the correct option (0 to 3)
+                "explanation": "Brief explanation if found, otherwise empty string",
+                "difficulty": "medium"
+              }
+            ]
+            
+            Text:
+            ${chunk}
+          `,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  options: { 
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  },
+                  correctAnswer: { type: Type.INTEGER },
+                  explanation: { type: Type.STRING },
+                  difficulty: { type: Type.STRING, enum: ['easy', 'medium', 'hard'] }
+                },
+                required: ["title", "options", "correctAnswer", "explanation", "difficulty"]
+              }
+            }
+          }
+        });
+
+        let responseText = response.text || '[]';
+        // Strip markdown code blocks if the model returns them despite responseMimeType
+        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(responseText);
+        if (Array.isArray(parsed)) {
+          allQuestions = [...allQuestions, ...parsed];
+        }
+      } catch (e) {
+        console.error(`Failed to parse Gemini response for chunk ${i}:`, e);
+        // Fallback to manual parsing for this specific chunk if Gemini fails
+        const manualParsed = parseQuestionsManually(chunk);
+        allQuestions = [...allQuestions, ...manualParsed];
+      }
+    }
+    
+    return allQuestions;
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,22 +469,43 @@ export default function Admin() {
         throw new Error('No valid questions found in the file.');
       }
 
-      const batch = writeBatch(db);
-      parsedQuestions.forEach((q) => {
-        const docRef = doc(collection(db, 'questions'));
-        batch.set(docRef, {
-          ...q,
-          subjectId: selectedSubjectId,
-          sectionId: selectedSectionId || '',
-          id: docRef.id,
-          createdAt: new Date().toISOString()
+      // Commit in chunks of 500 (Firestore batch limit)
+      const chunkSize = 500;
+      for (let i = 0; i < parsedQuestions.length; i += chunkSize) {
+        const chunk = parsedQuestions.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        
+        chunk.forEach((q) => {
+          const docRef = doc(collection(db, 'questions'));
+          batch.set(docRef, {
+            ...q,
+            subjectId: selectedSubjectId,
+            sectionId: selectedSectionId || '',
+            id: docRef.id,
+            createdAt: new Date().toISOString()
+          });
         });
-      });
+        
+        await batch.commit();
+      }
 
-      await batch.commit();
       setMessage({ text: `Successfully added ${parsedQuestions.length} questions!`, type: 'success' });
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, 'questions');
+      if (err instanceof Error && (err.message === 'No valid questions found in the file.' || err.message.includes('File type not supported'))) {
+        setMessage({ text: err.message, type: 'error' });
+      } else if (err?.name === 'FirebaseError' || err?.code?.includes('permission-denied') || err?.message?.includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.WRITE, 'questions');
+        } catch (firestoreErr: any) {
+          if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+            setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+            throw firestoreErr; // Rethrow for the system to diagnose security rules
+          }
+          setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Failed to upload questions due to a database error.', type: 'error' });
+        }
+      } else {
+        setMessage({ text: err instanceof Error ? err.message : 'An unexpected error occurred while processing the file.', type: 'error' });
+      }
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -406,8 +639,16 @@ export default function Admin() {
       const newRole = user.role === 'admin' ? 'student' : 'admin';
       await updateDoc(userRef, { role: newRole });
       setMessage({ text: `User role updated to ${newRole} successfully`, type: 'success' });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
+    } catch (error: any) {
+      try {
+        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -423,8 +664,16 @@ export default function Admin() {
 
       await updateDoc(userRef, { allowedSubjects: newAllowedSubjects });
       setMessage({ text: 'Permissions updated successfully', type: 'success' });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
+    } catch (error: any) {
+      try {
+        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -447,8 +696,16 @@ export default function Admin() {
       setSubjectForm({ nameAr: '', nameEn: '', icon: 'BookOpen' });
       setEditingSubject(null);
       setShowSubjectForm(false);
-    } catch (err) {
-      handleFirestoreError(err, editingSubject ? OperationType.UPDATE : OperationType.CREATE, 'subjects');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, editingSubject ? OperationType.UPDATE : OperationType.CREATE, 'subjects');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -471,8 +728,16 @@ export default function Admin() {
       setSectionForm({ subjectId: sectionForm.subjectId, nameAr: '', nameEn: '' });
       setEditingSection(null);
       setShowSectionForm(false);
-    } catch (err) {
-      handleFirestoreError(err, editingSection ? OperationType.UPDATE : OperationType.CREATE, 'sections');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, editingSection ? OperationType.UPDATE : OperationType.CREATE, 'sections');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -503,8 +768,16 @@ export default function Admin() {
       });
       setEditingQuestion(null);
       setShowQuestionForm(false);
-    } catch (err) {
-      handleFirestoreError(err, editingQuestion ? OperationType.UPDATE : OperationType.CREATE, 'questions');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, editingQuestion ? OperationType.UPDATE : OperationType.CREATE, 'questions');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -539,8 +812,16 @@ export default function Admin() {
 
       await batch.commit();
       setMessage({ text: 'Deleted successfully along with associated content', type: 'success' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, coll);
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, OperationType.DELETE, coll);
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -569,8 +850,16 @@ export default function Admin() {
       
       await deleteDoc(doc(db, 'quizResults', result.id));
       setMessage({ text: 'Quiz result deleted and points updated successfully', type: 'success' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, 'quizResults');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, OperationType.DELETE, 'quizResults');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -578,8 +867,16 @@ export default function Admin() {
     try {
       await updateDoc(doc(db, 'subjects', subject.id), { isLocked: !subject.isLocked });
       setMessage({ text: `Subject ${!subject.isLocked ? 'locked' : 'unlocked'} successfully`, type: 'success' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'subjects');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, OperationType.UPDATE, 'subjects');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     }
   };
 
@@ -596,8 +893,16 @@ export default function Admin() {
       await batch.commit();
       setSelectedQuestionIds(new Set());
       setMessage({ text: 'Selected questions deleted successfully', type: 'success' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, 'questions');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, OperationType.DELETE, 'questions');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     } finally {
       setIsDeletingBulk(false);
     }
@@ -615,8 +920,16 @@ export default function Admin() {
       await batch.commit();
       setSelectedQuestionIds(new Set());
       setMessage({ text: `Successfully moved ${selectedQuestionIds.size} questions`, type: 'success' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'questions');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, OperationType.UPDATE, 'questions');
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
     } finally {
       setIsDeletingBulk(false);
     }
@@ -1300,6 +1613,7 @@ export default function Admin() {
                   className="hidden"
                 />
                 <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading || !selectedSubjectId}
                   className={cn(

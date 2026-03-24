@@ -161,7 +161,16 @@ function AuthProvider({ children }: { children: ReactNode }) {
           }
           setLoading(false);
         }, (error) => {
-          handleFirestoreError(error, OperationType.GET, 'users/' + user.uid);
+          try {
+            handleFirestoreError(error, OperationType.GET, 'users/' + user.uid);
+          } catch (firestoreErr: any) {
+            if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+              throw firestoreErr;
+            }
+            console.error(firestoreErr);
+          } finally {
+            setLoading(false);
+          }
         });
       } else {
         setProfile(null);
