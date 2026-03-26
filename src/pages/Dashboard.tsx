@@ -191,7 +191,7 @@ export default function Dashboard() {
             {subjects.slice(0, 4).map((subject, i) => {
               const status = getSubjectStatus(subject.id);
               const progress = getSubjectProgress(subject.id);
-              const isLocked = subject.isLocked && !(profile?.allowedSubjects || []).includes(subject.id) && profile?.role !== 'admin';
+              const isLocked = subject.isLocked && !(profile?.allowedSubjects || []).includes(subject.id) && profile?.role !== 'admin' && profile?.role !== 'owner';
               
               return (
                 <SubjectCard
@@ -305,7 +305,7 @@ export default function Dashboard() {
         {subjects.map((subject, i) => {
           const status = getSubjectStatus(subject.id);
           const progress = getSubjectProgress(subject.id);
-          const isLocked = subject.isLocked && !(profile?.allowedSubjects || []).includes(subject.id) && profile?.role !== 'admin';
+          const isLocked = subject.isLocked && !(profile?.allowedSubjects || []).includes(subject.id) && profile?.role !== 'admin' && profile?.role !== 'owner';
           
           return (
             <SubjectCard
@@ -346,8 +346,13 @@ export default function Dashboard() {
                 <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Joined {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'N/A'}</span>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-2 rounded-xl border border-slate-100 dark:border-slate-700 flex items-center gap-2">
-                <Award size={16} className="text-slate-400" />
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300 capitalize">{profile?.role}</span>
+                <Award size={16} className={profile?.role === 'owner' ? "text-amber-500" : profile?.role === 'admin' ? "text-purple-500" : "text-slate-400"} />
+                <span className={cn(
+                  "text-sm font-bold capitalize",
+                  profile?.role === 'owner' ? "text-amber-600 dark:text-amber-400" : 
+                  profile?.role === 'admin' ? "text-purple-600 dark:text-purple-400" : 
+                  "text-slate-700 dark:text-slate-300"
+                )}>{profile?.role}</span>
               </div>
             </div>
           </div>

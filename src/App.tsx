@@ -1,7 +1,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode, lazy, Suspense } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, getDocFromServer } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, getDocFromServer, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 import { handleFirestoreError, OperationType } from './lib/firestore-errors';
@@ -121,6 +121,16 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const getDeviceId = () => {
+    let deviceId = localStorage.getItem('device_id');
+    if (!deviceId) {
+      deviceId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('device_id', deviceId);
+    }
+    return deviceId;
+  };
 
   useEffect(() => {
     // Validate connection to Firestore
@@ -142,18 +152,54 @@ function AuthProvider({ children }: { children: ReactNode }) {
       setUser(user);
       if (user) {
         const docRef = doc(db, 'users', user.uid);
-        unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
+        unsubscribeProfile = onSnapshot(docRef, async (docSnap) => {
           if (docSnap.exists()) {
-            setProfile(docSnap.data() as UserProfile);
+            const data = docSnap.data() as UserProfile;
+            
+            // Auto-upgrade owner role if needed
+            if (user.email === 'mhsn68503@gmail.com' && data.role !== 'owner') {
+              await updateDoc(docRef, { role: 'owner' });
+              data.role = 'owner';
+            }
+            
+            // Device Check Logic
+            if (data.role !== 'admin' && data.role !== 'owner' && user.email !== 'mhsn68503@gmail.com') {
+              const deviceId = getDeviceId();
+              const allowed = data.allowedDevices || 1;
+              const registered = data.registeredDevices || [];
+              
+              if (!registered.includes(deviceId)) {
+                if (registered.length < allowed) {
+                  // Register this device
+                  const newRegistered = [...registered, deviceId];
+                  await setDoc(docRef, { registeredDevices: newRegistered }, { merge: true });
+                  data.registeredDevices = newRegistered;
+                } else {
+                  // Max devices reached
+                  setAuthError('عذراً، هذا الحساب مسجل على الحد الأقصى من الأجهزة المسموح بها. يرجى التواصل مع الإدارة.');
+                  await signOut(auth);
+                  setProfile(null);
+                  setUser(null);
+                  setLoading(false);
+                  return;
+                }
+              }
+            }
+            
+            setAuthError(null);
+            setProfile(data);
           } else {
             // Create profile if it doesn't exist
+            const deviceId = getDeviceId();
             const newProfile: UserProfile = {
               uid: user.uid,
               email: user.email || '',
               displayName: user.displayName || 'Student',
-              role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
+              role: user.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
               points: 0,
               completedQuizzes: 0,
+              allowedDevices: 1,
+              registeredDevices: [deviceId],
               createdAt: new Date().toISOString(),
             };
             setDoc(docRef, newProfile).catch(err => handleFirestoreError(err, OperationType.WRITE, 'users/' + user.uid));
@@ -218,7 +264,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
       firstName: data.firstName,
       fatherName: data.fatherName,
       dateOfBirth: data.dateOfBirth,
-      role: user.email === 'mhsn68503@gmail.com' ? 'admin' : 'student',
+      role: user.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
       points: 0,
       completedQuizzes: 0,
     };
@@ -232,7 +278,32 @@ function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
 
-  const isAdmin = profile?.role === 'admin' || user?.email === 'mhsn68503@gmail.com';
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'owner' || user?.email === 'mhsn68503@gmail.com';
+
+  if (authError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 text-center">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldCheck size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4">تم رفض الوصول</h2>
+          <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">
+            {authError}
+          </p>
+          <button 
+            onClick={() => {
+              setAuthError(null);
+              window.location.href = '/';
+            }}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20 transition-all"
+          >
+            العودة للصفحة الرئيسية
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ErrorBoundary>

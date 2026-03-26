@@ -3,7 +3,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
-import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2, MonitorSmartphone } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -635,6 +635,7 @@ export default function Admin() {
 
   const toggleUserRole = async (user: UserProfile) => {
     try {
+      if (user.email === 'mhsn68503@gmail.com') return; // Owner role cannot be toggled
       const userRef = doc(db, 'users', user.uid);
       const newRole = user.role === 'admin' ? 'student' : 'admin';
       await updateDoc(userRef, { role: newRole });
@@ -664,6 +665,42 @@ export default function Admin() {
 
       await updateDoc(userRef, { allowedSubjects: newAllowedSubjects });
       setMessage({ text: 'Permissions updated successfully', type: 'success' });
+    } catch (error: any) {
+      try {
+        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
+    }
+  };
+
+  const updateAllowedDevices = async (user: UserProfile, count: number) => {
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { allowedDevices: count });
+      setMessage({ text: 'Allowed devices updated successfully', type: 'success' });
+    } catch (error: any) {
+      try {
+        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
+      } catch (firestoreErr: any) {
+        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
+          throw firestoreErr;
+        }
+        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
+      }
+    }
+  };
+
+  const clearRegisteredDevices = async (user: UserProfile) => {
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { registeredDevices: [] });
+      setMessage({ text: 'Registered devices cleared successfully', type: 'success' });
     } catch (error: any) {
       try {
         handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
@@ -1290,6 +1327,7 @@ export default function Admin() {
                     <th className="py-5 px-6">Birth Date</th>
                     <th className="py-5 px-6">Joined On</th>
                     <th className="py-5 px-6">Account Role</th>
+                    <th className="py-5 px-6">Devices</th>
                     <th className="py-5 px-6">Subject Access</th>
                     <th className="py-5 px-6 text-right">Actions</th>
                   </tr>
@@ -1335,12 +1373,21 @@ export default function Admin() {
                         <td className="py-5 px-6">
                           <span className={cn(
                             "inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider",
-                            user.role === 'admin' 
+                            user.role === 'owner' || user.email === 'mhsn68503@gmail.com'
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 ring-1 ring-amber-500/30 shadow-sm"
+                              : user.role === 'admin' 
                               ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" 
                               : "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
                           )}>
-                            {user.role}
+                            {user.email === 'mhsn68503@gmail.com' ? 'owner' : user.role}
                           </span>
+                        </td>
+                        <td className="py-5 px-6">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900 dark:text-white">
+                              {(user.registeredDevices || []).length} / {user.allowedDevices || 1}
+                            </span>
+                          </div>
                         </td>
                         <td className="py-5 px-6">
                           <div className="flex items-center gap-2">
@@ -1374,7 +1421,7 @@ export default function Admin() {
                       </tr>
                       {expandedUserId === user.uid && (
                         <tr className="bg-slate-50/30 dark:bg-slate-800/10">
-                          <td colSpan={7} className="p-8">
+                          <td colSpan={8} className="p-8">
                             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-8 shadow-xl animate-in slide-in-from-top-2 duration-300">
                               <div className="flex items-center justify-between mb-8">
                                 <div>
@@ -1403,6 +1450,44 @@ export default function Admin() {
                                     />
                                   );
                                 })}
+                              </div>
+
+                              <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center justify-between mb-6">
+                                  <div>
+                                    <h4 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                      <MonitorSmartphone size={20} className="text-blue-600" />
+                                      Device Management
+                                    </h4>
+                                    <p className="text-sm text-slate-400 mt-1">Control how many devices this user can log in from.</p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                                  <div className="flex-1 w-full max-w-xs">
+                                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Allowed Devices</label>
+                                    <input 
+                                      type="number" 
+                                      min="1"
+                                      value={user.allowedDevices || 1}
+                                      onChange={(e) => updateAllowedDevices(user, parseInt(e.target.value) || 1)}
+                                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                                    />
+                                  </div>
+                                  <div className="flex-1 w-full max-w-xs">
+                                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Registered Devices</label>
+                                    <div className="flex items-center gap-3">
+                                      <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold flex-1 text-center">
+                                        {(user.registeredDevices || []).length} Devices
+                                      </div>
+                                      <button
+                                        onClick={() => clearRegisteredDevices(user)}
+                                        className="px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-xl font-bold transition-all whitespace-nowrap"
+                                      >
+                                        Clear Devices
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </td>

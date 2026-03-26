@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'student';
+export type UserRole = 'admin' | 'student' | 'owner';
 
 export interface UserProfile {
   uid: string;
@@ -12,6 +12,8 @@ export interface UserProfile {
   completedQuizzes: number;
   sectionPoints?: Record<string, number>;
   allowedSubjects?: string[];
+  allowedDevices?: number;
+  registeredDevices?: string[];
   createdAt?: string;
 }
 

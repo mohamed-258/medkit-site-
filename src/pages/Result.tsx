@@ -18,6 +18,7 @@ export default function Result() {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [loading, setLoading] = useState(!state?.result);
   const [fetchedResult, setFetchedResult] = useState<QuizResult | null>(state?.result || null);
+  const [showWrongOnly, setShowWrongOnly] = useState(false);
 
   useEffect(() => {
     const fetchResult = async () => {
@@ -112,14 +113,30 @@ export default function Result() {
 
       {/* Detailed Review */}
       <section>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-8 flex items-center gap-3">
-          <BookOpen size={24} className="text-blue-600" />
-          Review Answers
-        </h2>
+        <div className="flex items-center gap-3 mb-8">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex-1 flex items-center gap-3">
+            <BookOpen size={24} className="text-blue-600" />
+            مراجعة الإجابات
+          </h2>
+          <button
+            onClick={() => setShowWrongOnly(!showWrongOnly)}
+            className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+              showWrongOnly 
+                ? 'bg-red-600 text-white shadow-lg shadow-red-500/20' 
+                : 'bg-red-50 text-red-600 dark:bg-red-900/20'
+            }`}
+          >
+            {showWrongOnly ? '📋 كل الأسئلة' : '❌ الغلط فقط'}
+            {showWrongOnly ? '' : ` (${questions.filter((_: any, i: number) => 
+              selectedAnswers[i] !== questions[i]?.correctAnswer).length})`}
+          </button>
+        </div>
 
         <div className="space-y-6">
           {questions.map((q: any, i: number) => {
             const isCorrect = selectedAnswers[i] === q.correctAnswer;
+            if (showWrongOnly && isCorrect) return null;
+            
             const isExpanded = expandedIdx === i;
 
             return (

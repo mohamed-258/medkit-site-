@@ -30,7 +30,7 @@ service cloud.firestore {
       return isAuthenticated() &&
         (request.auth.token.email == "mhsn68503@gmail.com" ||
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner')));
     }
 
     function isSubjectAllowed(subjectId) {
@@ -42,7 +42,7 @@ service cloud.firestore {
       return data.keys().hasAll(['uid', 'email', 'role']) &&
              data.uid is string &&
              data.email is string &&
-             data.role in ['admin', 'student'] &&
+             data.role in ['admin', 'student', 'owner'] &&
              (!('displayName' in data) || data.displayName is string) &&
              (!('firstName' in data) || data.firstName is string) &&
              (!('fatherName' in data) || data.fatherName is string) &&
