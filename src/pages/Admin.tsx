@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
@@ -168,10 +168,13 @@ export default function Admin() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [selectedSectionId, setSelectedSectionId] = useState<string>('');
+  const [questionSearchQuery, setQuestionSearchQuery] = useState<string>('');
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [expandedAdminSection, setExpandedAdminSection] = useState<string | null>(null);
+  const [questionsPage, setQuestionsPage] = useState(1);
+  const QUESTIONS_PER_PAGE = 50;
 
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [editingSection, setEditingSection] = useState<Section | null>(null);
@@ -1113,19 +1116,36 @@ export default function Admin() {
     }
   };
 
-  const filteredQuestions = questions.filter(q => {
-    if (selectedSubjectId && q.subjectId !== selectedSubjectId) {
-      const subject = subjects.find(s => s.id === selectedSubjectId);
-      if (!(subject && (subject as any).manualId === q.subjectId)) return false;
-    }
-    if (selectedSectionId && q.sectionId !== selectedSectionId) return false;
-    return true;
-  }).sort((a, b) => {
-    // Sort by createdAt if available, newest first
-    const dateA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : 0;
-    const dateB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : 0;
-    return dateB - dateA;
-  });
+  const filteredQuestions = useMemo(() => {
+    return questions.filter(q => {
+      if (questionSearchQuery) {
+        const query = questionSearchQuery.toLowerCase();
+        const matchesTitle = q.title.toLowerCase().includes(query);
+        const matchesOptions = q.options.some(opt => opt.toLowerCase().includes(query));
+        const matchesExplanation = q.explanation.toLowerCase().includes(query);
+        return matchesTitle || matchesOptions || matchesExplanation;
+      }
+
+      if (selectedSubjectId && q.subjectId !== selectedSubjectId) {
+        const subject = subjects.find(s => s.id === selectedSubjectId);
+        if (!(subject && (subject as any).manualId === q.subjectId)) return false;
+      }
+      if (selectedSectionId && q.sectionId !== selectedSectionId) return false;
+      
+      return true;
+    }).sort((a, b) => {
+      const dateA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : 0;
+      const dateB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+  }, [questions, selectedSubjectId, selectedSectionId, subjects, questionSearchQuery]);
+
+  const paginatedQuestions = useMemo(() => {
+    const start = (questionsPage - 1) * QUESTIONS_PER_PAGE;
+    return filteredQuestions.slice(start, start + QUESTIONS_PER_PAGE);
+  }, [filteredQuestions, questionsPage]);
+
+  const totalPages = Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE);
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -1774,6 +1794,7 @@ export default function Admin() {
                     setSelectedSubjectId(e.target.value);
                     setSelectedSectionId('');
                     setSelectedQuestionIds(new Set());
+                    setQuestionsPage(1);
                   }}
                   className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                 >
@@ -1791,6 +1812,7 @@ export default function Admin() {
                   onChange={(e) => {
                     setSelectedSectionId(e.target.value);
                     setSelectedQuestionIds(new Set());
+                    setQuestionsPage(1);
                   }}
                   className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold disabled:opacity-50"
                   disabled={!selectedSubjectId}
@@ -1831,8 +1853,29 @@ export default function Admin() {
             </div>
           </div>
 
+          <div className="mb-6 relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <Search size={20} className="text-slate-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Search questions by title, options, or explanation..."
+              value={questionSearchQuery}
+              onChange={(e) => setQuestionSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-medium shadow-sm"
+            />
+            {questionSearchQuery && (
+              <button
+                onClick={() => setQuestionSearchQuery('')}
+                className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 gap-4">
-            {filteredQuestions.map((q) => (
+            {paginatedQuestions.map((q) => (
               <div 
                 key={q.id} 
                 className={cn(
@@ -1903,6 +1946,56 @@ export default function Admin() {
               </div>
             ))}
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-sm font-bold text-slate-400">
+                Showing {((questionsPage - 1) * QUESTIONS_PER_PAGE) + 1}–{Math.min(questionsPage * QUESTIONS_PER_PAGE, filteredQuestions.length)} of {filteredQuestions.length} questions
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setQuestionsPage(p => Math.max(1, p - 1))}
+                  disabled={questionsPage === 1}
+                  className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl text-sm font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+                >
+                  ← Prev
+                </button>
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  let page: number;
+                  if (totalPages <= 7) {
+                    page = i + 1;
+                  } else if (questionsPage <= 4) {
+                    page = i + 1;
+                  } else if (questionsPage >= totalPages - 3) {
+                    page = totalPages - 6 + i;
+                  } else {
+                    page = questionsPage - 3 + i;
+                  }
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => setQuestionsPage(page)}
+                      className={cn(
+                        "w-9 h-9 rounded-xl text-sm font-black transition-all",
+                        questionsPage === page
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                          : "bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      {page}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setQuestionsPage(p => Math.min(totalPages, p + 1))}
+                  disabled={questionsPage === totalPages}
+                  className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl text-sm font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
