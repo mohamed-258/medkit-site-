@@ -39,13 +39,16 @@ export default function Quiz() {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [savedProgress, setSavedProgress] = useState<any>(null);
   const [pendingSectionId, setPendingSectionId] = useState<string | undefined>(undefined);
+  const [feedbackMode, setFeedbackMode] = useState<'instant' | 'end'>('end');
+  const [quizStarted, setQuizStarted] = useState(false);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleAnswer = useCallback((optionIdx: number) => {
     if (isFinished) return;
+    if (feedbackMode === 'instant' && selectedAnswers[currentIdx] !== undefined) return;
     setSelectedAnswers(prev => ({ ...prev, [currentIdx]: optionIdx }));
-  }, [currentIdx, isFinished]);
+  }, [currentIdx, isFinished, feedbackMode, selectedAnswers]);
 
   const toggleFlag = useCallback((idx: number) => {
     if (isFinished) return;
@@ -204,7 +207,7 @@ export default function Quiz() {
           // Fetch question counts for each section
           const counts: Record<string, number> = {};
           const allQuestionsSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', currentSubject.id)));
-          const allQuestions = allQuestionsSnap.docs.map(d => d.data() as Question);
+          const allQuestions = allQuestionsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Question));
           
           // Count for "All Sections"
           counts['all'] = allQuestions.length;
@@ -214,8 +217,23 @@ export default function Quiz() {
             counts[section.id] = allQuestions.filter(q => q.sectionId === section.id).length;
           });
           setSectionQuestionCounts(counts);
+
+          // Calculate mistakes count
+          if (profile?.uid) {
+            const resultsSnap = await getDocs(query(collection(db, 'quizResults'), where('userId', '==', profile.uid), where('subjectId', '==', subjectId)));
+            const mistakes = new Set<string>();
+            resultsSnap.docs.forEach(doc => {
+              const result = doc.data() as QuizResult;
+              result.questions.forEach((q, idx) => {
+                if (result.selectedAnswers[idx] !== q.correctAnswer) {
+                  mistakes.add(q.id);
+                }
+              });
+            });
+            counts['mistakes'] = mistakes.size;
+          }
           
-          if (sectionsList.length > 0) {
+          if (sectionsList.length > 0 || counts['mistakes'] > 0) {
             setShowSectionSelection(true);
             setLoading(false);
             return;
@@ -253,7 +271,28 @@ export default function Quiz() {
     try {
       let qList: Question[] = [];
       
-      if (sectionId) {
+      if (sectionId === 'mistakes') {
+        const resultsSnap = await getDocs(query(collection(db, 'quizResults'), where('userId', '==', profile!.uid), where('subjectId', '==', sId)));
+        const mistakeIds = new Set<string>();
+        resultsSnap.docs.forEach(doc => {
+          const result = doc.data() as QuizResult;
+          result.questions.forEach((q, idx) => {
+            if (result.selectedAnswers[idx] !== q.correctAnswer) {
+              mistakeIds.add(q.id);
+            }
+          });
+        });
+
+        if (mistakeIds.size > 0) {
+          const qSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', sId)));
+          let allQList = qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
+          if (allQList.length === 0 && firestoreId) {
+            const qSnapFirestore = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', firestoreId)));
+            allQList = qSnapFirestore.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
+          }
+          qList = allQList.filter(q => mistakeIds.has(q.id));
+        }
+      } else if (sectionId) {
         // Find if this section has sub-sections
         const subSections = sections.filter(s => s.parentId === sectionId);
         if (subSections.length > 0) {
@@ -340,9 +379,11 @@ export default function Quiz() {
       setTimeLeft(savedProgress.timeLeft);
       setFlaggedQuestions(new Set(savedProgress.flaggedQuestions));
       setVisitedQuestions(new Set(savedProgress.visitedQuestions));
+      setFeedbackMode(savedProgress.feedbackMode || 'end');
       setShowSectionSelection(false);
       setShowResumeModal(false);
       setLoading(false);
+      setQuizStarted(true);
     }
   };
 
@@ -354,7 +395,7 @@ export default function Quiz() {
   };
 
   useEffect(() => {
-    if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal) return;
+    if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal || !quizStarted) return;
     const key = `medkit_quiz_${profile?.uid}_${subjectId}_${selectedSectionId || 'all'}`;
     const progress = {
       currentIdx,
@@ -363,13 +404,14 @@ export default function Quiz() {
       flaggedQuestions: Array.from(flaggedQuestions),
       visitedQuestions: Array.from(visitedQuestions),
       questions,
+      feedbackMode,
       timestamp: new Date().getTime()
     };
     localStorage.setItem(key, JSON.stringify(progress));
-  }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, profile?.uid]);
+  }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, profile?.uid, feedbackMode, quizStarted]);
 
   useEffect(() => {
-    if (timeLeft > 0 && !isFinished && !loading) {
+    if (timeLeft > 0 && !isFinished && !loading && quizStarted) {
       timerRef.current = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -385,7 +427,7 @@ export default function Quiz() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [timeLeft, isFinished, loading, handleSubmit]);
+  }, [timeLeft, isFinished, loading, quizStarted, handleSubmit]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -479,6 +521,28 @@ export default function Quiz() {
             )}
           </div>
         </button>
+
+        {sectionQuestionCounts['mistakes'] > 0 && (
+          <button 
+            onClick={() => handleStartQuiz('mistakes')}
+            className="p-6 bg-rose-600 text-white rounded-2xl shadow-lg shadow-rose-500/20 text-left group transition-all duration-300 hover:-translate-y-1 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Review Mistakes</h3>
+                <p className="text-rose-100 text-sm">Practice questions you previously answered incorrectly.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs font-bold text-rose-200 bg-rose-500/50 px-3 py-1.5 rounded-lg">
+                {sectionQuestionCounts['mistakes']} Questions
+              </div>
+            </div>
+          </button>
+        )}
 
         {sections.filter(s => !s.parentId).map((section) => {
           const subSections = sections.filter(sub => sub.parentId === section.id);
@@ -582,6 +646,59 @@ export default function Quiz() {
     </div>
   );
 
+  if (!quizStarted) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 px-4">
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-xl max-w-md w-full border border-slate-100 dark:border-slate-700">
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-6 text-center">Quiz Settings</h2>
+        
+        <div className="space-y-4 mb-8">
+          <button
+            onClick={() => setFeedbackMode('end')}
+            className={cn(
+              "w-full p-4 rounded-2xl border-2 text-left transition-all",
+              feedbackMode === 'end' 
+                ? "border-blue-600 bg-blue-50 dark:bg-blue-900/20" 
+                : "border-slate-200 dark:border-slate-700 hover:border-blue-300"
+            )}
+          >
+            <div className="flex items-center gap-3 mb-1">
+              <div className={cn("w-4 h-4 rounded-full border-2 flex items-center justify-center", feedbackMode === 'end' ? "border-blue-600" : "border-slate-400")}>
+                {feedbackMode === 'end' && <div className="w-2 h-2 rounded-full bg-blue-600" />}
+              </div>
+              <span className="font-bold text-slate-900 dark:text-white">End of Quiz Feedback</span>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400 pl-7">Show answers and explanations only after finishing the entire quiz.</p>
+          </button>
+
+          <button
+            onClick={() => setFeedbackMode('instant')}
+            className={cn(
+              "w-full p-4 rounded-2xl border-2 text-left transition-all",
+              feedbackMode === 'instant' 
+                ? "border-blue-600 bg-blue-50 dark:bg-blue-900/20" 
+                : "border-slate-200 dark:border-slate-700 hover:border-blue-300"
+            )}
+          >
+            <div className="flex items-center gap-3 mb-1">
+              <div className={cn("w-4 h-4 rounded-full border-2 flex items-center justify-center", feedbackMode === 'instant' ? "border-blue-600" : "border-slate-400")}>
+                {feedbackMode === 'instant' && <div className="w-2 h-2 rounded-full bg-blue-600" />}
+              </div>
+              <span className="font-bold text-slate-900 dark:text-white">Instant Feedback</span>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400 pl-7">Show the correct answer and explanation immediately after answering each question.</p>
+          </button>
+        </div>
+
+        <button
+          onClick={() => setQuizStarted(true)}
+          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
+        >
+          Start Quiz
+        </button>
+      </div>
+    </div>
+  );
+
   const currentQuestion = questions[currentIdx];
   const progress = ((currentIdx + 1) / questions.length) * 100;
 
@@ -667,37 +784,81 @@ export default function Quiz() {
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:gap-4">
-                {currentQuestion.options.map((option, i) => (
+                {currentQuestion.options.map((option, i) => {
+                  const isSelected = selectedAnswers[currentIdx] === i;
+                  const isAnswered = selectedAnswers[currentIdx] !== undefined;
+                  const showInstantFeedback = feedbackMode === 'instant' && isAnswered;
+                  const isCorrect = i === currentQuestion.correctAnswer;
+                  
+                  let buttonClass = "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-slate-50 dark:hover:bg-slate-800/80";
+                  let iconClass = "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 group-hover:text-blue-600 dark:group-hover:text-blue-400";
+                  
+                  if (showInstantFeedback) {
+                    if (isCorrect) {
+                      buttonClass = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm";
+                      iconClass = "bg-emerald-500 text-white shadow-md shadow-emerald-500/30";
+                    } else if (isSelected) {
+                      buttonClass = "bg-red-50 dark:bg-red-900/20 border-red-500 text-red-700 dark:text-red-400 shadow-sm";
+                      iconClass = "bg-red-500 text-white shadow-md shadow-red-500/30";
+                    } else {
+                      buttonClass = "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 opacity-50";
+                      iconClass = "bg-slate-100 dark:bg-slate-700 text-slate-400";
+                    }
+                  } else if (isSelected) {
+                    buttonClass = "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 shadow-sm";
+                    iconClass = "bg-blue-600 text-white shadow-md shadow-blue-500/30";
+                  }
+
+                  return (
                   <button
                     key={i}
                     onClick={() => handleAnswer(i)}
+                    disabled={showInstantFeedback}
                     className={cn(
-                      "w-full text-left p-4 sm:p-6 rounded-2xl border-2 transition-all flex items-center justify-between group relative overflow-hidden",
-                      selectedAnswers[currentIdx] === i 
-                        ? "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 shadow-sm" 
-                        : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+                      "w-full text-left p-4 sm:p-6 rounded-2xl border-2 transition-all flex items-start sm:items-center justify-between gap-4 group relative overflow-hidden",
+                      buttonClass
                     )}
                   >
-                    {selectedAnswers[currentIdx] === i && (
+                    {isSelected && !showInstantFeedback && (
                       <div className="absolute inset-0 bg-blue-600/5 dark:bg-blue-400/5" />
                     )}
-                    <div className="flex items-center gap-4 relative z-10">
+                    <div className="flex items-start sm:items-center gap-4 relative z-10 flex-1 min-w-0">
                       <div className={cn(
-                        "w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl flex items-center justify-center font-bold text-sm sm:text-base transition-colors",
-                        selectedAnswers[currentIdx] === i ? "bg-blue-600 text-white shadow-md shadow-blue-500/30" : "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 group-hover:text-blue-600 dark:group-hover:text-blue-400"
+                        "w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl flex items-center justify-center font-bold text-sm sm:text-base transition-colors mt-0.5 sm:mt-0",
+                        iconClass
                       )}>
                         {String.fromCharCode(65 + i)}
                       </div>
-                      <span className="text-base sm:text-lg font-medium">{option}</span>
+                      <span className="text-base sm:text-lg font-medium break-words flex-1">{option}</span>
                     </div>
-                    {selectedAnswers[currentIdx] === i && (
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200">
+                    {isSelected && !showInstantFeedback && (
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
                         <CheckCircle2 size={16} className="sm:w-5 sm:h-5" />
                       </div>
                     )}
+                    {showInstantFeedback && isCorrect && (
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
+                        <CheckCircle2 size={16} className="sm:w-5 sm:h-5" />
+                      </div>
+                    )}
+                    {showInstantFeedback && isSelected && !isCorrect && (
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-red-500 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
+                        <XCircle size={16} className="sm:w-5 sm:h-5" />
+                      </div>
+                    )}
                   </button>
-                ))}
+                )})}
               </div>
+
+              {feedbackMode === 'instant' && selectedAnswers[currentIdx] !== undefined && currentQuestion.explanation && (
+                <div className="mt-6 p-6 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
+                  <h4 className="font-bold text-blue-900 dark:text-blue-100 mb-2 flex items-center gap-2">
+                    <BookOpen size={18} />
+                    Explanation
+                  </h4>
+                  <div className="prose dark:prose-invert max-w-none text-sm text-blue-800 dark:text-blue-200" dangerouslySetInnerHTML={{ __html: currentQuestion.explanation }} />
+                </div>
+              )}
             </div>
 
             {/* Navigation */}

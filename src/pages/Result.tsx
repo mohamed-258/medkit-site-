@@ -177,20 +177,20 @@ export default function Result() {
                         <div
                           key={optIdx}
                           className={cn(
-                            "p-4 rounded-xl border text-sm font-medium flex items-center gap-3",
+                            "p-4 rounded-xl border text-sm font-medium flex items-start gap-3",
                             optIdx === q.correctAnswer ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400" :
                             optIdx === selectedAnswers[i] ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400" :
                             "bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-500"
                           )}
                         >
                           <div className={cn(
-                            "w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold",
+                            "w-6 h-6 shrink-0 rounded flex items-center justify-center text-[10px] font-bold mt-0.5",
                             optIdx === q.correctAnswer ? "bg-emerald-600 text-white" :
                             optIdx === selectedAnswers[i] ? "bg-red-600 text-white" : "bg-slate-200 dark:bg-slate-700 text-slate-500"
                           )}>
                             {String.fromCharCode(65 + optIdx)}
                           </div>
-                          {opt}
+                          <span className="break-words flex-1">{opt}</span>
                         </div>
                       ))}
                     </div>

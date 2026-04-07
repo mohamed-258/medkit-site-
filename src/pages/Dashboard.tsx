@@ -48,7 +48,7 @@ export default function Dashboard() {
       }));
       setSubjectQuestionCounts(counts);
       setLoading(false);
-    });
+    }, (error) => console.error("Subjects snapshot error:", error));
 
     const resultsQuery = query(
       collection(db, 'quizResults'),

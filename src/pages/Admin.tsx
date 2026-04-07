@@ -179,6 +179,7 @@ export default function Admin() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [editingSection, setEditingSection] = useState<Section | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const [editingDevices, setEditingDevices] = useState<Record<string, string>>({});
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -732,24 +733,24 @@ export default function Admin() {
         const data = doc.data();
         return { ...data, manualId: data.id, id: doc.id } as Subject & { manualId?: string };
       }));
-    });
+    }, (error) => console.error("Subjects snapshot error:", error));
 
     const unsubSections = onSnapshot(collection(db, 'sections'), (snapshot) => {
       setSections(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Section)));
-    });
+    }, (error) => console.error("Sections snapshot error:", error));
 
     const unsubQuestions = onSnapshot(collection(db, 'questions'), (snapshot) => {
       setQuestions(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question)));
       setLoading(false);
-    });
+    }, (error) => console.error("Questions snapshot error:", error));
 
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
-    });
+    }, (error) => console.error("Users snapshot error:", error));
 
     const unsubQuizResults = onSnapshot(collection(db, 'quizResults'), (snapshot) => {
       setQuizResults(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as QuizResult)));
-    });
+    }, (error) => console.error("QuizResults snapshot error:", error));
 
     return () => {
       unsubSubjects();
@@ -913,11 +914,57 @@ export default function Admin() {
     }
 
     try {
+      const sanitizedForm = Object.fromEntries(
+        Object.entries(questionForm).filter(([_, v]) => v !== undefined)
+      );
+
       if (editingQuestion) {
-        await updateDoc(doc(db, 'questions', editingQuestion.id), { ...questionForm });
+        await updateDoc(doc(db, 'questions', editingQuestion.id), sanitizedForm);
+        
+        // Update quiz results that contain this question
+        const resultsSnap = await getDocs(collection(db, 'quizResults'));
+        let batch = writeBatch(db);
+        let batchCount = 0;
+        
+        for (const docSnap of resultsSnap.docs) {
+          const result = docSnap.data() as QuizResult;
+          if (result.questions && result.selectedAnswers) {
+            const questionIndex = result.questions.findIndex(q => q.id === editingQuestion.id);
+            if (questionIndex !== -1) {
+              // Update the question in the result
+              const updatedQuestions = [...result.questions];
+              updatedQuestions[questionIndex] = { ...updatedQuestions[questionIndex], ...sanitizedForm } as Question;
+              
+              // Recalculate score
+              let newScore = 0;
+              updatedQuestions.forEach((q, idx) => {
+                if (result.selectedAnswers![idx] === q.correctAnswer) {
+                  newScore++;
+                }
+              });
+              
+              batch.update(doc(db, 'quizResults', docSnap.id), {
+                questions: updatedQuestions,
+                score: newScore
+              });
+              batchCount++;
+              
+              if (batchCount === 400) {
+                await batch.commit();
+                batch = writeBatch(db);
+                batchCount = 0;
+              }
+            }
+          }
+        }
+        
+        if (batchCount > 0) {
+          await batch.commit();
+        }
+
         setMessage({ text: 'Question updated successfully', type: 'success' });
       } else {
-        const docRef = await addDoc(collection(db, 'questions'), { ...questionForm, createdAt: new Date().toISOString() });
+        const docRef = await addDoc(collection(db, 'questions'), { ...sanitizedForm, createdAt: new Date().toISOString() });
         await updateDoc(docRef, { id: docRef.id });
         setMessage({ text: 'Question added successfully', type: 'success' });
       }
@@ -1604,8 +1651,16 @@ export default function Admin() {
                                     <input 
                                       type="number" 
                                       min="1"
-                                      value={user.allowedDevices || 1}
-                                      onChange={(e) => updateAllowedDevices(user, parseInt(e.target.value) || 1)}
+                                      value={editingDevices[user.uid] !== undefined ? editingDevices[user.uid] : (user.allowedDevices || 1)}
+                                      onChange={(e) => setEditingDevices({ ...editingDevices, [user.uid]: e.target.value })}
+                                      onBlur={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        if (!isNaN(val) && val >= 1) {
+                                          updateAllowedDevices(user, val);
+                                        } else {
+                                          setEditingDevices({ ...editingDevices, [user.uid]: (user.allowedDevices || 1).toString() });
+                                        }
+                                      }}
                                       className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                                     />
                                   </div>
@@ -2118,23 +2173,23 @@ export default function Admin() {
 
       {/* Question Form Modal */}
       {showQuestionForm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-300">
-          <div className="w-full max-w-3xl bg-white dark:bg-slate-900 rounded-[3rem] p-10 shadow-2xl my-8 animate-in zoom-in-95 duration-300">
-            <div className="flex items-center justify-between mb-10">
-                <h2 className="text-3xl font-black text-slate-900 dark:text-white">{editingQuestion ? 'Edit Question' : 'Add Question'}</h2>
-                <button onClick={() => { setShowQuestionForm(false); setEditingQuestion(null); }} className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
+        <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-300">
+          <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-[2rem] p-6 sm:p-10 shadow-2xl my-4 sm:my-8 animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">{editingQuestion ? 'Edit Question' : 'Add Question'}</h2>
+                <button onClick={() => { setShowQuestionForm(false); setEditingQuestion(null); }} className="p-2 sm:p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAddQuestion} className="space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <form onSubmit={handleAddQuestion} className="space-y-6 sm:space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                   <div className="space-y-2">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Subject</label>
                     <select
                       required
                       value={questionForm.subjectId}
                       onChange={(e) => setQuestionForm({ ...questionForm, subjectId: e.target.value, sectionId: '' })}
-                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                      className="w-full px-4 sm:px-5 py-3 sm:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                     >
                       <option value="">Select subject...</option>
                       {subjects.map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
@@ -2145,7 +2200,7 @@ export default function Admin() {
                     <select
                       value={questionForm.sectionId}
                       onChange={(e) => setQuestionForm({ ...questionForm, sectionId: e.target.value })}
-                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold disabled:opacity-50"
+                      className="w-full px-4 sm:px-5 py-3 sm:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold disabled:opacity-50"
                       disabled={!questionForm.subjectId}
                     >
                       <option value="">Select section...</option>
@@ -2167,7 +2222,7 @@ export default function Admin() {
                     <select
                       value={questionForm.difficulty}
                       onChange={(e) => setQuestionForm({ ...questionForm, difficulty: e.target.value as any })}
-                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                      className="w-full px-4 sm:px-5 py-3 sm:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                     >
                       <option value="easy">Easy</option>
                       <option value="medium">Medium</option>
@@ -2183,12 +2238,12 @@ export default function Admin() {
                       theme="snow"
                       value={questionForm.title || ''}
                       onChange={(content) => setQuestionForm({ ...questionForm, title: content })}
-                      className="h-32 mb-12"
+                      className="h-24 sm:h-32 mb-12 sm:mb-14"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   {questionForm.options?.map((opt, i) => (
                     <div key={i} className="space-y-2">
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Option {String.fromCharCode(65 + i)}</label>
@@ -2201,13 +2256,13 @@ export default function Admin() {
                           newOpts[i] = e.target.value;
                           setQuestionForm({ ...questionForm, options: newOpts });
                         }}
-                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                        className="w-full px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                       />
                     </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
                   <div className="space-y-2">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Correct Answer</label>
                     <div className="grid grid-cols-4 gap-2">
@@ -2217,7 +2272,7 @@ export default function Admin() {
                           type="button"
                           onClick={() => setQuestionForm({ ...questionForm, correctAnswer: idx })}
                           className={cn(
-                            "py-3 rounded-xl font-black text-sm transition-all",
+                            "py-2 sm:py-3 rounded-xl font-black text-sm transition-all",
                             questionForm.correctAnswer === idx 
                               ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20" 
                               : "bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -2237,12 +2292,12 @@ export default function Admin() {
                       theme="snow"
                       value={questionForm.explanation || ''}
                       onChange={(content) => setQuestionForm({ ...questionForm, explanation: content })}
-                      className="h-32 mb-12"
+                      className="h-24 sm:h-32 mb-12 sm:mb-14"
                     />
                   </div>
                 </div>
 
-                <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                <button type="submit" className="w-full py-4 sm:py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
                   {editingQuestion ? 'Update Question' : 'Save Question'}
                 </button>
               </form>
