@@ -31,6 +31,7 @@ export interface Section {
   parentId?: string;
   nameAr?: string;
   nameEn?: string;
+  order?: number;
 }
 
 export interface Question {

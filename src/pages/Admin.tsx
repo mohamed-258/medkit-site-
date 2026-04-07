@@ -10,6 +10,23 @@ import { GoogleGenAI, Type } from "@google/genai";
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { lazy, Suspense } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import AdminAnalytics from '../components/admin/AdminAnalytics';
 
 const QuizBuilder = lazy(() => import('../components/admin/QuizBuilder'));
@@ -89,6 +106,54 @@ function UserSubjectItem({ subject, sections, isAllowed, onToggleAccess }: { sub
   );
 }
 
+function SortableSubSection({ sub, subQuestions, onEdit, onDelete }: { sub: Section, subQuestions: Question[], onEdit: (sub: Section) => void, onDelete: (id: string) => void }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: sub.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : 10,
+    opacity: isDragging ? 0.8 : 1,
+    boxShadow: isDragging ? '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)' : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={cn("flex items-center justify-between bg-white dark:bg-slate-800 p-4 rounded-xl border shadow-sm relative cursor-grab active:cursor-grabbing touch-none transition-colors", isDragging ? "border-indigo-500 dark:border-indigo-500" : "border-slate-100 dark:border-slate-700")}>
+      <div className="flex items-center gap-3">
+        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+        <h4 className="font-bold text-slate-700 dark:text-slate-300">{sub.nameEn || sub.nameAr}</h4>
+      </div>
+      <div className="flex items-center gap-6">
+        <div className="text-right">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Questions</p>
+          <p className="text-sm font-bold text-slate-900 dark:text-white">{subQuestions.length}</p>
+        </div>
+        <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onEdit(sub)}
+            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+          >
+            <Edit2 size={16} />
+          </button>
+          <button
+            onClick={() => onDelete(sub.id)}
+            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Admin() {
   const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'quizResults' | 'analytics'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -111,6 +176,65 @@ export default function Admin() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [editingSection, setEditingSection] = useState<Section | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = sections.findIndex((s) => s.id === active.id);
+      const newIndex = sections.findIndex((s) => s.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const parentId = sections[oldIndex].parentId;
+        if (!parentId) return; // Only reorder subsections
+
+        const subSections = sections.filter(s => s.parentId === parentId).sort((a, b) => (a.order || 0) - (b.order || 0));
+        
+        const oldSubIndex = subSections.findIndex(s => s.id === active.id);
+        const newSubIndex = subSections.findIndex(s => s.id === over.id);
+
+        if (oldSubIndex !== -1 && newSubIndex !== -1) {
+          const newSubSections = arrayMove(subSections, oldSubIndex, newSubIndex);
+          
+          // Optimistic update
+          const newSections = [...sections];
+          newSubSections.forEach((sub, index) => {
+            const sectionIndex = newSections.findIndex(s => s.id === sub.id);
+            if (sectionIndex !== -1) {
+              newSections[sectionIndex] = { ...newSections[sectionIndex], order: index };
+            }
+          });
+          setSections(newSections);
+
+          // Update in Firestore
+          try {
+            const batch = writeBatch(db);
+            newSubSections.forEach((sub, index) => {
+              const docRef = doc(db, 'sections', sub.id);
+              batch.update(docRef, { order: index });
+            });
+            await batch.commit();
+          } catch (error) {
+            console.error("Error updating order:", error);
+            setMessage({ text: "Failed to save new order", type: "error" });
+            // Revert optimistic update by refetching or just relying on onSnapshot
+          }
+        }
+      }
+    }
+  };
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -1249,41 +1373,33 @@ export default function Admin() {
                   
                   {hasSubSections && isExpanded && (
                     <div className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 p-4 pl-14 flex flex-col gap-2 animate-in slide-in-from-top-2 duration-300">
-                      {subSections.map(sub => {
-                        const subQuestions = questions.filter(q => q.sectionId === sub.id);
-                        return (
-                          <div key={sub.id} className="flex items-center justify-between bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                            <div className="flex items-center gap-3">
-                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                              <h4 className="font-bold text-slate-700 dark:text-slate-300">{sub.nameEn || sub.nameAr}</h4>
-                            </div>
-                            <div className="flex items-center gap-6">
-                              <div className="text-right">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Questions</p>
-                                <p className="text-sm font-bold text-slate-900 dark:text-white">{subQuestions.length}</p>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => {
-                                    setEditingSection(sub);
-                                    setSectionForm({ subjectId: sub.subjectId, parentId: sub.parentId || '', nameAr: sub.nameAr, nameEn: sub.nameEn });
-                                    setShowSectionForm(true);
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
-                                >
-                                  <Edit2 size={16} />
-                                </button>
-                                <button
-                                  onClick={() => handleDelete('sections', sub.id)}
-                                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <SortableContext
+                          items={subSections.map(s => s.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {subSections.sort((a, b) => (a.order || 0) - (b.order || 0)).map(sub => {
+                            const subQuestions = questions.filter(q => q.sectionId === sub.id);
+                            return (
+                              <SortableSubSection
+                                key={sub.id}
+                                sub={sub}
+                                subQuestions={subQuestions}
+                                onEdit={(sub) => {
+                                  setEditingSection(sub);
+                                  setSectionForm({ subjectId: sub.subjectId, parentId: sub.parentId || '', nameAr: sub.nameAr, nameEn: sub.nameEn });
+                                  setShowSectionForm(true);
+                                }}
+                                onDelete={(id) => handleDelete('sections', id)}
+                              />
+                            );
+                          })}
+                        </SortableContext>
+                      </DndContext>
                     </div>
                   )}
                 </div>

@@ -529,7 +529,7 @@ export default function Quiz() {
               
               {hasSubSections && isExpanded && (
                 <div className="px-5 pb-5 pt-2 grid grid-cols-1 gap-2 animate-in slide-in-from-top-2 duration-300 pl-14">
-                  {subSections.map(sub => (
+                  {subSections.sort((a, b) => (a.order || 0) - (b.order || 0)).map(sub => (
                     <button
                       key={sub.id}
                       onClick={() => handleStartQuiz(sub.id)}
