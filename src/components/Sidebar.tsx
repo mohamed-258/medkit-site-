@@ -22,7 +22,6 @@ export default function Sidebar() {
 
   if (isAdmin) {
     menuItems.push({ name: 'Admin Panel', icon: ShieldCheck, path: '/admin' });
-    menuItems.push({ name: 'Manage Users', icon: Users, path: '/manage-users' });
   }
 
   const isActive = (path: string) => location.pathname === path;
