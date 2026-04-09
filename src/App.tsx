@@ -163,7 +163,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
             }
             
             // Device Check Logic
-            if (data.role !== 'admin' && data.role !== 'owner' && user.email !== 'mhsn68503@gmail.com') {
+            if (user.email !== 'mhsn68503@gmail.com') {
               const deviceId = getDeviceId();
               const allowed = data.allowedDevices || 1;
               const registered = data.registeredDevices || [];

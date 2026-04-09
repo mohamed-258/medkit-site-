@@ -29,6 +29,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import AdminAnalytics from '../components/admin/AdminAnalytics';
 
+import ManageUsersPanel from '../components/admin/ManageUsersPanel';
+
 const QuizBuilder = lazy(() => import('../components/admin/QuizBuilder'));
 
 // Set PDF.js worker
@@ -1475,223 +1477,16 @@ export default function Admin() {
           </div>
         </section>
       ) : activeTab === 'users' ? (
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">User Permissions</h2>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={refreshAllPoints}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
-                title="Recalculate points for all users based on their quiz results"
-              >
-                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-                Refresh All Points
-              </button>
-              <button
-                onClick={() => {
-                  setMessage({ text: 'Refreshing user list...', type: 'success' });
-                  setTimeout(() => setMessage(null), 2000);
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-              >
-                <RefreshCw size={16} />
-                Refresh List
-              </button>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-[0.1em] font-black border-b border-slate-50 dark:border-slate-800">
-                    <th className="py-5 px-6">User Details</th>
-                    <th className="py-5 px-6">Points</th>
-                    <th className="py-5 px-6">Birth Date</th>
-                    <th className="py-5 px-6">Joined On</th>
-                    <th className="py-5 px-6">Account Role</th>
-                    <th className="py-5 px-6">Devices</th>
-                    <th className="py-5 px-6">Subject Access</th>
-                    <th className="py-5 px-6 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                  {Object.values(users.reduce((acc, user) => {
-                    if (!acc[user.email]) acc[user.email] = user;
-                    return acc;
-                  }, {} as Record<string, UserProfile>)).map((user) => (
-                    <React.Fragment key={user.uid}>
-                      <tr 
-                        onClick={() => setExpandedUserId(expandedUserId === user.uid ? null : user.uid)}
-                        className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-all cursor-pointer group"
-                      >
-                        <td className="py-5 px-6">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 shrink-0">
-                              {(user.displayName || user.email || '?').charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-bold text-slate-900 dark:text-white text-base truncate flex items-center gap-2">
-                                {user.displayName || 'N/A'}
-                                {expandedUserId === user.uid ? (
-                                  <ChevronUp size={14} className="text-blue-500" />
-                                ) : (
-                                  <ChevronDown size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                )}
-                              </div>
-                              <div className="text-xs text-slate-400 dark:text-slate-500 font-medium truncate">{user.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-5 px-6">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                            <span className="text-sm font-black text-slate-900 dark:text-white">{user.points || 0}</span>
-                          </div>
-                        </td>
-                        <td className="py-5 px-6 text-sm font-semibold text-slate-600 dark:text-slate-400">{user.dateOfBirth || '—'}</td>
-                        <td className="py-5 px-6 text-sm font-semibold text-slate-600 dark:text-slate-400">
-                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                        </td>
-                        <td className="py-5 px-6">
-                          <span className={cn(
-                            "inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider",
-                            user.role === 'owner' || user.email === 'mhsn68503@gmail.com'
-                              ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 ring-1 ring-amber-500/30 shadow-sm"
-                              : user.role === 'admin' 
-                              ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" 
-                              : "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                          )}>
-                            {user.email === 'mhsn68503@gmail.com' ? 'owner' : user.role}
-                          </span>
-                        </td>
-                        <td className="py-5 px-6">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-slate-900 dark:text-white">
-                              {(user.registeredDevices || []).length} / {user.allowedDevices || 1}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-5 px-6">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden max-w-[60px]">
-                              <div 
-                                className="h-full bg-emerald-500 rounded-full" 
-                                style={{ width: `${Math.min(100, ((user.allowedSubjects || []).length / subjects.length) * 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-bold text-slate-900 dark:text-white">
-                              {(user.allowedSubjects || []).length} / {subjects.length}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-5 px-6 text-right" onClick={(e) => e.stopPropagation()}>
-                          {user.email !== 'mhsn68503@gmail.com' && (
-                            <button
-                              onClick={() => toggleUserRole(user)}
-                              className={cn(
-                                "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm",
-                                user.role === 'admin' 
-                                  ? "bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400" 
-                                  : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400"
-                              )}
-                            >
-                              <RefreshCw size={12} />
-                              {user.role === 'admin' ? 'Demote' : 'Promote'}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {expandedUserId === user.uid && (
-                        <tr className="bg-slate-50/30 dark:bg-slate-800/10">
-                          <td colSpan={8} className="p-8">
-                            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-8 shadow-xl animate-in slide-in-from-top-2 duration-300">
-                              <div className="flex items-center justify-between mb-8">
-                                <div>
-                                  <h4 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                    <Lock size={20} className="text-blue-600" />
-                                    Subject Access Control
-                                  </h4>
-                                  <p className="text-sm text-slate-400 mt-1">Manage which subjects {user.displayName || 'this user'} can access.</p>
-                                </div>
-                                <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
-                                  <span className="text-xs font-black text-blue-600 uppercase tracking-wider">
-                                    {(user.allowedSubjects || []).length} Subjects Allowed
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[500px] overflow-y-auto pr-4 custom-scrollbar">
-                                {subjects.map(subject => {
-                                  const isAllowed = (user.allowedSubjects || []).includes(subject.id);
-                                  return (
-                                    <UserSubjectItem 
-                                      key={subject.id} 
-                                      subject={subject} 
-                                      sections={sections.filter(s => s.subjectId === subject.id)}
-                                      isAllowed={isAllowed}
-                                      onToggleAccess={() => toggleSubjectAccess(user, subject.id)}
-                                    />
-                                  );
-                                })}
-                              </div>
-
-                              <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800">
-                                <div className="flex items-center justify-between mb-6">
-                                  <div>
-                                    <h4 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                      <MonitorSmartphone size={20} className="text-blue-600" />
-                                      Device Management
-                                    </h4>
-                                    <p className="text-sm text-slate-400 mt-1">Control how many devices this user can log in from.</p>
-                                  </div>
-                                </div>
-                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                                  <div className="flex-1 w-full max-w-xs">
-                                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Allowed Devices</label>
-                                    <input 
-                                      type="number" 
-                                      min="1"
-                                      value={editingDevices[user.uid] !== undefined ? editingDevices[user.uid] : (user.allowedDevices || 1)}
-                                      onChange={(e) => setEditingDevices({ ...editingDevices, [user.uid]: e.target.value })}
-                                      onBlur={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        if (!isNaN(val) && val >= 1) {
-                                          updateAllowedDevices(user, val);
-                                        } else {
-                                          setEditingDevices({ ...editingDevices, [user.uid]: (user.allowedDevices || 1).toString() });
-                                        }
-                                      }}
-                                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                                    />
-                                  </div>
-                                  <div className="flex-1 w-full max-w-xs">
-                                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Registered Devices</label>
-                                    <div className="flex items-center gap-3">
-                                      <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold flex-1 text-center">
-                                        {(user.registeredDevices || []).length} Devices
-                                      </div>
-                                      <button
-                                        onClick={() => clearRegisteredDevices(user)}
-                                        className="px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-xl font-bold transition-all whitespace-nowrap"
-                                      >
-                                        Clear Devices
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </section>
+        <ManageUsersPanel
+          users={users}
+          subjects={subjects}
+          loading={loading}
+          onToggleRole={toggleUserRole}
+          onToggleSubjectAccess={toggleSubjectAccess}
+          onUpdateAllowedDevices={updateAllowedDevices}
+          onClearDevices={clearRegisteredDevices}
+          onRefreshPoints={refreshAllPoints}
+        />
       ) : activeTab === 'quizResults' ? (
         <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex items-center justify-between mb-8">

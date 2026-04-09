@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, Trophy, Activity, User, ShieldCheck, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Trophy, Activity, User, ShieldCheck, LogOut, Users } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useAuth } from '../App';
@@ -22,6 +22,7 @@ export default function Sidebar() {
 
   if (isAdmin) {
     menuItems.push({ name: 'Admin Panel', icon: ShieldCheck, path: '/admin' });
+    menuItems.push({ name: 'Manage Users', icon: Users, path: '/manage-users' });
   }
 
   const isActive = (path: string) => location.pathname === path;

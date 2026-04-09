@@ -384,6 +384,12 @@ export default function Dashboard() {
               <span className="text-sm font-medium text-slate-500">Quizzes Completed</span>
               <span className="font-bold text-emerald-600">{profile?.completedQuizzes}</span>
             </div>
+            <div className="flex justify-between items-center pt-2 border-t border-slate-50 dark:border-slate-800">
+              <span className="text-sm font-medium text-slate-500">Registered Devices</span>
+              <span className="font-bold text-slate-900 dark:text-white">
+                {(profile?.registeredDevices || []).length} / {profile?.allowedDevices || 1}
+              </span>
+            </div>
           </div>
         </div>
       </div>
