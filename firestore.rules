@@ -15,6 +15,9 @@ service cloud.firestore {
     //
     // Collection: quizResults
     // Fields: id (string), userId (string), subjectId (string), score (number), totalQuestions (number), timestamp (string)
+    //
+    // Collection: quizProgress
+    // Fields: userId (string), subjectId (string), sectionId (string), currentIdx (number), selectedAnswers (map), timeLeft (number), questions (list), timestamp (number)
     // ===============================================================
 
     // Helper Functions
@@ -95,6 +98,18 @@ service cloud.firestore {
              data.timestamp is string;
     }
 
+    function isValidQuizProgress(data) {
+      return data.keys().hasAll(['userId', 'subjectId', 'sectionId', 'currentIdx', 'selectedAnswers', 'timeLeft', 'questions', 'timestamp']) &&
+             data.userId is string &&
+             data.subjectId is string &&
+             data.sectionId is string &&
+             data.currentIdx is number &&
+             data.selectedAnswers is map &&
+             data.timeLeft is number &&
+             data.questions is list &&
+             data.timestamp is number;
+    }
+
     // Rules
     match /users/{userId} {
       allow read: if isAuthenticated();
@@ -127,6 +142,12 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidQuizResult(request.resource.data);
       allow update: if isAdmin() && isValidQuizResult(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    match /quizProgress/{progressId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create, update: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidQuizProgress(request.resource.data);
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
   }
 }

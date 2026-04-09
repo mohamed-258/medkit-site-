@@ -82,6 +82,25 @@
         "email": { "type": "string", "format": "email", "description": "The authorized email address." }
       },
       "required": ["email"]
+    },
+    "QuizProgress": {
+      "title": "QuizProgress",
+      "description": "The saved progress of an unfinished quiz.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user." },
+        "subjectId": { "type": "string", "description": "The ID of the subject." },
+        "sectionId": { "type": "string", "description": "The ID of the section (or 'all')." },
+        "currentIdx": { "type": "number", "description": "The index of the current question." },
+        "selectedAnswers": { "type": "object", "description": "The answers selected so far." },
+        "timeLeft": { "type": "number", "description": "The remaining time in seconds." },
+        "flaggedQuestions": { "type": "array", "items": { "type": "number" }, "description": "Indices of flagged questions." },
+        "visitedQuestions": { "type": "array", "items": { "type": "number" }, "description": "Indices of visited questions." },
+        "questions": { "type": "array", "items": { "$ref": "Question" }, "description": "The list of questions in the quiz." },
+        "feedbackMode": { "type": "string", "enum": ["instant", "end"], "description": "The feedback mode." },
+        "timestamp": { "type": "number", "description": "The timestamp of the last save." }
+      },
+      "required": ["userId", "subjectId", "sectionId", "currentIdx", "selectedAnswers", "timeLeft", "questions", "timestamp"]
     }
   },
   "firestore": {
@@ -90,6 +109,7 @@
     "/sections/{sectionId}": { "schema": "Section", "description": "Sections within subjects." },
     "/questions/{questionId}": { "schema": "Question", "description": "Exam questions." },
     "/quizResults/{resultId}": { "schema": "QuizResult", "description": "Quiz performance records." },
-    "/authorizedEmails/{email}": { "schema": "AuthorizedEmail", "description": "Authorized emails." }
+    "/authorizedEmails/{email}": { "schema": "AuthorizedEmail", "description": "Authorized emails." },
+    "/quizProgress/{progressId}": { "schema": "QuizProgress", "description": "Saved quiz progress." }
   }
 }

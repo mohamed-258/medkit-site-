@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { useAuth } from '../App';
@@ -67,8 +67,10 @@ export default function Quiz() {
     if (timerRef.current) clearInterval(timerRef.current);
 
     // Clear saved progress
-    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${selectedSectionId || 'all'}`;
-    localStorage.removeItem(key);
+    if (profile?.uid && subjectId) {
+      const progressId = `${profile.uid}_${subjectId}_${selectedSectionId || 'all'}`;
+      deleteDoc(doc(db, 'quizProgress', progressId)).catch(err => console.error("Error deleting progress:", err));
+    }
 
     let score = 0;
     questions.forEach((q, i) => {
@@ -241,18 +243,20 @@ export default function Quiz() {
         }
 
         // Check for saved progress if no sections
-        const key = `medkit_quiz_${profile?.uid}_${subjectId}_all`;
-        const saved = localStorage.getItem(key);
-        if (saved) {
+        if (profile?.uid && subjectId) {
+          const progressId = `${profile.uid}_${subjectId}_all`;
           try {
-            const parsed = JSON.parse(saved);
-            setSavedProgress(parsed);
-            setPendingSectionId(undefined);
-            setShowResumeModal(true);
-            setLoading(false);
-            return;
+            const progressSnap = await getDoc(doc(db, 'quizProgress', progressId));
+            if (progressSnap.exists()) {
+              const parsed = progressSnap.data();
+              setSavedProgress(parsed);
+              setPendingSectionId(undefined);
+              setShowResumeModal(true);
+              setLoading(false);
+              return;
+            }
           } catch (e) {
-            localStorage.removeItem(key);
+            console.error("Error fetching progress:", e);
           }
         }
 
@@ -350,21 +354,22 @@ export default function Quiz() {
 
   const [message, setMessage] = useState<string | null>(null);
 
-  const handleStartQuiz = (sectionId?: string) => {
+  const handleStartQuiz = async (sectionId?: string) => {
     setSelectedSectionId(sectionId || '');
     
-    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${sectionId || 'all'}`;
-    const saved = localStorage.getItem(key);
-    
-    if (saved) {
+    if (profile?.uid && subjectId) {
+      const progressId = `${profile.uid}_${subjectId}_${sectionId || 'all'}`;
       try {
-        const parsed = JSON.parse(saved);
-        setSavedProgress(parsed);
-        setPendingSectionId(sectionId);
-        setShowResumeModal(true);
-        return;
-      } catch (e) {
-        localStorage.removeItem(key);
+        const progressSnap = await getDoc(doc(db, 'quizProgress', progressId));
+        if (progressSnap.exists()) {
+          const parsed = progressSnap.data();
+          setSavedProgress(parsed);
+          setPendingSectionId(sectionId);
+          setShowResumeModal(true);
+          return;
+        }
+      } catch (err) {
+        console.error("Error fetching progress:", err);
       }
     }
     
@@ -388,26 +393,48 @@ export default function Quiz() {
   };
 
   const startNewQuiz = () => {
-    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${pendingSectionId || 'all'}`;
-    localStorage.removeItem(key);
+    if (profile?.uid && subjectId) {
+      const progressId = `${profile.uid}_${subjectId}_${pendingSectionId || 'all'}`;
+      deleteDoc(doc(db, 'quizProgress', progressId)).catch(err => console.error("Error deleting progress:", err));
+    }
     setShowResumeModal(false);
     fetchQuestions(subjectId!, subject?.id, pendingSectionId);
   };
 
+  // Debounced save to Firestore
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
-    if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal || !quizStarted) return;
-    const key = `medkit_quiz_${profile?.uid}_${subjectId}_${selectedSectionId || 'all'}`;
-    const progress = {
-      currentIdx,
-      selectedAnswers,
-      timeLeft,
-      flaggedQuestions: Array.from(flaggedQuestions),
-      visitedQuestions: Array.from(visitedQuestions),
-      questions,
-      feedbackMode,
-      timestamp: new Date().getTime()
+    if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal || !quizStarted || !profile?.uid) return;
+    
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      const progressId = `${profile.uid}_${subjectId}_${selectedSectionId || 'all'}`;
+      const progress = {
+        currentIdx,
+        selectedAnswers,
+        timeLeft,
+        flaggedQuestions: Array.from(flaggedQuestions),
+        visitedQuestions: Array.from(visitedQuestions),
+        questions,
+        feedbackMode,
+        userId: profile.uid,
+        subjectId,
+        sectionId: selectedSectionId || 'all',
+        timestamp: new Date().getTime()
+      };
+      
+      try {
+        await setDoc(doc(db, 'quizProgress', progressId), progress);
+      } catch (err) {
+        console.error("Error saving progress to Firestore:", err);
+      }
+    }, 2000); // Debounce for 2 seconds
+
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-    localStorage.setItem(key, JSON.stringify(progress));
   }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, profile?.uid, feedbackMode, quizStarted]);
 
   useEffect(() => {
