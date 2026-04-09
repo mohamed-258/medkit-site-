@@ -385,6 +385,7 @@ export default function Quiz() {
       setFlaggedQuestions(new Set(savedProgress.flaggedQuestions));
       setVisitedQuestions(new Set(savedProgress.visitedQuestions));
       setFeedbackMode(savedProgress.feedbackMode || 'end');
+      setSelectedSectionId(savedProgress.sectionId === 'all' ? '' : savedProgress.sectionId);
       setShowSectionSelection(false);
       setShowResumeModal(false);
       setLoading(false);
@@ -410,7 +411,8 @@ export default function Quiz() {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(async () => {
-      const progressId = `${profile.uid}_${subjectId}_${selectedSectionId || 'all'}`;
+      const currentSectionId = selectedSectionId || 'all';
+      const progressId = `${profile.uid}_${subjectId}_${currentSectionId}`;
       const progress = {
         currentIdx,
         selectedAnswers,
@@ -421,7 +423,7 @@ export default function Quiz() {
         feedbackMode,
         userId: profile.uid,
         subjectId,
-        sectionId: selectedSectionId || 'all',
+        sectionId: currentSectionId,
         timestamp: new Date().getTime()
       };
       
@@ -430,7 +432,7 @@ export default function Quiz() {
       } catch (err) {
         console.error("Error saving progress to Firestore:", err);
       }
-    }, 2000); // Debounce for 2 seconds
+    }, 1000); // Reduced debounce to 1 second
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
