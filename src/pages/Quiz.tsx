@@ -67,9 +67,9 @@ export default function Quiz() {
     if (timerRef.current) clearInterval(timerRef.current);
 
     // Clear saved progress
-    if (profile?.uid && subjectId) {
-      const progressId = `${profile.uid}_${subjectId}_${selectedSectionId || 'all'}`;
-      deleteDoc(doc(db, 'quizProgress', progressId)).catch(err => console.error("Error deleting progress:", err));
+    if (subjectId) {
+      const progressKey = `quiz_progress_${subjectId}_${selectedSectionId || 'all'}`;
+      localStorage.removeItem(progressKey);
     }
 
     let score = 0;
@@ -243,20 +243,20 @@ export default function Quiz() {
         }
 
         // Check for saved progress if no sections
-        if (profile?.uid && subjectId) {
-          const progressId = `${profile.uid}_${subjectId}_all`;
-          try {
-            const progressSnap = await getDoc(doc(db, 'quizProgress', progressId));
-            if (progressSnap.exists()) {
-              const parsed = progressSnap.data();
+        if (subjectId) {
+          const progressKey = `quiz_progress_${subjectId}_all`;
+          const savedStr = localStorage.getItem(progressKey);
+          if (savedStr) {
+            try {
+              const parsed = JSON.parse(savedStr);
               setSavedProgress(parsed);
               setPendingSectionId(undefined);
               setShowResumeModal(true);
               setLoading(false);
               return;
+            } catch (e) {
+              console.error("Error parsing saved progress:", e);
             }
-          } catch (e) {
-            console.error("Error fetching progress:", e);
           }
         }
 
@@ -357,19 +357,19 @@ export default function Quiz() {
   const handleStartQuiz = async (sectionId?: string) => {
     setSelectedSectionId(sectionId || '');
     
-    if (profile?.uid && subjectId) {
-      const progressId = `${profile.uid}_${subjectId}_${sectionId || 'all'}`;
-      try {
-        const progressSnap = await getDoc(doc(db, 'quizProgress', progressId));
-        if (progressSnap.exists()) {
-          const parsed = progressSnap.data();
+    if (subjectId) {
+      const progressKey = `quiz_progress_${subjectId}_${sectionId || 'all'}`;
+      const savedStr = localStorage.getItem(progressKey);
+      if (savedStr) {
+        try {
+          const parsed = JSON.parse(savedStr);
           setSavedProgress(parsed);
           setPendingSectionId(sectionId);
           setShowResumeModal(true);
           return;
+        } catch (e) {
+          console.error("Error parsing saved progress:", e);
         }
-      } catch (err) {
-        console.error("Error fetching progress:", err);
       }
     }
     
@@ -394,9 +394,9 @@ export default function Quiz() {
   };
 
   const startNewQuiz = () => {
-    if (profile?.uid && subjectId) {
-      const progressId = `${profile.uid}_${subjectId}_${pendingSectionId || 'all'}`;
-      deleteDoc(doc(db, 'quizProgress', progressId)).catch(err => console.error("Error deleting progress:", err));
+    if (subjectId) {
+      const progressKey = `quiz_progress_${subjectId}_${pendingSectionId || 'all'}`;
+      localStorage.removeItem(progressKey);
     }
     setShowResumeModal(false);
     fetchQuestions(subjectId!, subject?.id, pendingSectionId);
@@ -406,13 +406,13 @@ export default function Quiz() {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal || !quizStarted || !profile?.uid) return;
+    if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal || !quizStarted) return;
     
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-    saveTimeoutRef.current = setTimeout(async () => {
+    saveTimeoutRef.current = setTimeout(() => {
       const currentSectionId = selectedSectionId || 'all';
-      const progressId = `${profile.uid}_${subjectId}_${currentSectionId}`;
+      const progressKey = `quiz_progress_${subjectId}_${currentSectionId}`;
       const progress = {
         currentIdx,
         selectedAnswers,
@@ -421,23 +421,21 @@ export default function Quiz() {
         visitedQuestions: Array.from(visitedQuestions),
         questions,
         feedbackMode,
-        userId: profile.uid,
-        subjectId,
         sectionId: currentSectionId,
         timestamp: new Date().getTime()
       };
       
       try {
-        await setDoc(doc(db, 'quizProgress', progressId), progress);
+        localStorage.setItem(progressKey, JSON.stringify(progress));
       } catch (err) {
-        console.error("Error saving progress to Firestore:", err);
+        console.error("Error saving progress to localStorage:", err);
       }
-    }, 1000); // Reduced debounce to 1 second
+    }, 1000);
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, profile?.uid, feedbackMode, quizStarted]);
+  }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, feedbackMode, quizStarted]);
 
   useEffect(() => {
     if (timeLeft > 0 && !isFinished && !loading && quizStarted) {

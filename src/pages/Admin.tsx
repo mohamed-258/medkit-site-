@@ -856,8 +856,8 @@ export default function Admin() {
         await updateDoc(doc(db, 'subjects', editingSubject.id), subjectForm);
         setMessage({ text: 'Subject updated successfully', type: 'success' });
       } else {
-        const docRef = await addDoc(collection(db, 'subjects'), subjectForm);
-        await updateDoc(docRef, { id: docRef.id });
+        const docRef = doc(collection(db, 'subjects'));
+        await setDoc(docRef, { ...subjectForm, id: docRef.id });
         setMessage({ text: 'Subject added successfully', type: 'success' });
       }
       setSubjectForm({ nameAr: '', nameEn: '', icon: 'BookOpen' });
@@ -888,8 +888,8 @@ export default function Admin() {
         await updateDoc(doc(db, 'sections', editingSection.id), sectionForm);
         setMessage({ text: 'Section updated successfully', type: 'success' });
       } else {
-        const docRef = await addDoc(collection(db, 'sections'), sectionForm);
-        await updateDoc(docRef, { id: docRef.id });
+        const docRef = doc(collection(db, 'sections'));
+        await setDoc(docRef, { ...sectionForm, id: docRef.id });
         setMessage({ text: 'Section added successfully', type: 'success' });
       }
       setSectionForm({ subjectId: sectionForm.subjectId, nameAr: '', nameEn: '' });
@@ -916,58 +916,17 @@ export default function Admin() {
     }
 
     try {
+      const { id: _, ...rest } = questionForm;
       const sanitizedForm = Object.fromEntries(
-        Object.entries(questionForm).filter(([_, v]) => v !== undefined)
+        Object.entries(rest).filter(([_, v]) => v !== undefined)
       );
 
       if (editingQuestion) {
         await updateDoc(doc(db, 'questions', editingQuestion.id), sanitizedForm);
-        
-        // Update quiz results that contain this question
-        const resultsSnap = await getDocs(collection(db, 'quizResults'));
-        let batch = writeBatch(db);
-        let batchCount = 0;
-        
-        for (const docSnap of resultsSnap.docs) {
-          const result = docSnap.data() as QuizResult;
-          if (result.questions && result.selectedAnswers) {
-            const questionIndex = result.questions.findIndex(q => q.id === editingQuestion.id);
-            if (questionIndex !== -1) {
-              // Update the question in the result
-              const updatedQuestions = [...result.questions];
-              updatedQuestions[questionIndex] = { ...updatedQuestions[questionIndex], ...sanitizedForm } as Question;
-              
-              // Recalculate score
-              let newScore = 0;
-              updatedQuestions.forEach((q, idx) => {
-                if (result.selectedAnswers![idx] === q.correctAnswer) {
-                  newScore++;
-                }
-              });
-              
-              batch.update(doc(db, 'quizResults', docSnap.id), {
-                questions: updatedQuestions,
-                score: newScore
-              });
-              batchCount++;
-              
-              if (batchCount === 400) {
-                await batch.commit();
-                batch = writeBatch(db);
-                batchCount = 0;
-              }
-            }
-          }
-        }
-        
-        if (batchCount > 0) {
-          await batch.commit();
-        }
-
         setMessage({ text: 'Question updated successfully', type: 'success' });
       } else {
-        const docRef = await addDoc(collection(db, 'questions'), { ...sanitizedForm, createdAt: new Date().toISOString() });
-        await updateDoc(docRef, { id: docRef.id });
+        const docRef = doc(collection(db, 'questions'));
+        await setDoc(docRef, { ...sanitizedForm, id: docRef.id, createdAt: new Date().toISOString() });
         setMessage({ text: 'Question added successfully', type: 'success' });
       }
       setQuestionForm({
@@ -1858,39 +1817,41 @@ export default function Admin() {
       {/* Subject Form Modal */}
       {showSubjectForm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="flex items-center justify-between mb-10">
-                <h2 className="text-3xl font-black text-slate-900 dark:text-white">{editingSubject ? 'Edit Subject' : 'Add Subject'}</h2>
-                <button onClick={() => { setShowSubjectForm(false); setEditingSubject(null); }} className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
+          <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-6 sm:p-10 border-b border-slate-100 dark:border-slate-800">
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">{editingSubject ? 'Edit Subject' : 'Add Subject'}</h2>
+                <button onClick={() => { setShowSubjectForm(false); setEditingSubject(null); }} className="p-2 sm:p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAddSubject} className="space-y-8">
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Category Name (English)</label>
-                  <input
-                    type="text"
-                    required
-                    value={subjectForm.nameEn}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, nameEn: e.target.value })}
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                    placeholder="e.g. Internal Medicine"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Category Name (Arabic)</label>
-                  <input
-                    type="text"
-                    value={subjectForm.nameAr}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, nameAr: e.target.value })}
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                    placeholder="Optional..."
-                  />
-                </div>
-                <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
-                  {editingSubject ? 'Update Category' : 'Create Category'}
-                </button>
-              </form>
+              <div className="flex-1 overflow-y-auto p-6 sm:p-10 custom-scrollbar">
+                <form onSubmit={handleAddSubject} className="space-y-8">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Category Name (English)</label>
+                    <input
+                      type="text"
+                      required
+                      value={subjectForm.nameEn}
+                      onChange={(e) => setSubjectForm({ ...subjectForm, nameEn: e.target.value })}
+                      className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                      placeholder="e.g. Internal Medicine"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Category Name (Arabic)</label>
+                    <input
+                      type="text"
+                      value={subjectForm.nameAr}
+                      onChange={(e) => setSubjectForm({ ...subjectForm, nameAr: e.target.value })}
+                      className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                      placeholder="Optional..."
+                    />
+                  </div>
+                  <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                    {editingSubject ? 'Update Category' : 'Create Category'}
+                  </button>
+                </form>
+              </div>
           </div>
         </div>
       )}
@@ -1898,86 +1859,90 @@ export default function Admin() {
       {/* Section Form Modal */}
       {showSectionForm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="flex items-center justify-between mb-10">
-                <h2 className="text-3xl font-black text-slate-900 dark:text-white">{editingSection ? 'Edit Section' : 'Add Section'}</h2>
-                <button onClick={() => { setShowSectionForm(false); setEditingSection(null); }} className="p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
+          <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-6 sm:p-10 border-b border-slate-100 dark:border-slate-800">
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">{editingSection ? 'Edit Section' : 'Add Section'}</h2>
+                <button onClick={() => { setShowSectionForm(false); setEditingSection(null); }} className="p-2 sm:p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAddSection} className="space-y-8">
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Parent Subject</label>
-                  <select
-                    required
-                    value={sectionForm.subjectId}
-                    onChange={(e) => setSectionForm({ ...sectionForm, subjectId: e.target.value, parentId: '' })}
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                  >
-                    <option value="">Select subject...</option>
-                    {subjects.map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
-                  </select>
-                </div>
-                {sectionForm.subjectId && (
+              <div className="flex-1 overflow-y-auto p-6 sm:p-10 custom-scrollbar">
+                <form onSubmit={handleAddSection} className="space-y-8">
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Parent Section (Optional)</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Parent Subject</label>
                     <select
-                      value={sectionForm.parentId || ''}
-                      onChange={(e) => setSectionForm({ ...sectionForm, parentId: e.target.value })}
+                      required
+                      value={sectionForm.subjectId}
+                      onChange={(e) => setSectionForm({ ...sectionForm, subjectId: e.target.value, parentId: '' })}
                       className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                     >
-                      <option value="">None (Top Level)</option>
-                      {sections
-                        .filter(s => s.subjectId === sectionForm.subjectId && s.id !== editingSection?.id && !s.parentId)
-                        .map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
+                      <option value="">Select subject...</option>
+                      {subjects.map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
                     </select>
                   </div>
-                )}
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
-                    {sectionForm.parentId ? 'Sub-Section Name (English)' : 'Section Name (English)'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={sectionForm.nameEn}
-                    onChange={(e) => setSectionForm({ ...sectionForm, nameEn: e.target.value })}
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                    placeholder={sectionForm.parentId ? "e.g. Lecture 1" : "e.g. Anatomy"}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
-                    {sectionForm.parentId ? 'Sub-Section Name (Arabic)' : 'Section Name (Arabic)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={sectionForm.nameAr}
-                    onChange={(e) => setSectionForm({ ...sectionForm, nameAr: e.target.value })}
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                    placeholder="Optional..."
-                  />
-                </div>
-                <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
-                  {editingSection ? 'Update Section' : 'Create Section'}
-                </button>
-              </form>
+                  {sectionForm.subjectId && (
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Parent Section (Optional)</label>
+                      <select
+                        value={sectionForm.parentId || ''}
+                        onChange={(e) => setSectionForm({ ...sectionForm, parentId: e.target.value })}
+                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                      >
+                        <option value="">None (Top Level)</option>
+                        {sections
+                          .filter(s => s.subjectId === sectionForm.subjectId && s.id !== editingSection?.id && !s.parentId)
+                          .map(s => <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+                      {sectionForm.parentId ? 'Sub-Section Name (English)' : 'Section Name (English)'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={sectionForm.nameEn}
+                      onChange={(e) => setSectionForm({ ...sectionForm, nameEn: e.target.value })}
+                      className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                      placeholder={sectionForm.parentId ? "e.g. Lecture 1" : "e.g. Anatomy"}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+                      {sectionForm.parentId ? 'Sub-Section Name (Arabic)' : 'Section Name (Arabic)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={sectionForm.nameAr}
+                      onChange={(e) => setSectionForm({ ...sectionForm, nameAr: e.target.value })}
+                      className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                      placeholder="Optional..."
+                    />
+                  </div>
+                  <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                    {editingSection ? 'Update Section' : 'Create Section'}
+                  </button>
+                </form>
+              </div>
           </div>
         </div>
       )}
 
       {/* Question Form Modal */}
       {showQuestionForm && (
-        <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-300">
-          <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-[2rem] p-6 sm:p-10 shadow-2xl my-4 sm:my-8 animate-in zoom-in-95 duration-300">
-            <div className="flex items-center justify-between mb-8">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-5xl bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-6 sm:p-10 border-b border-slate-100 dark:border-slate-800">
                 <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">{editingQuestion ? 'Edit Question' : 'Add Question'}</h2>
                 <button onClick={() => { setShowQuestionForm(false); setEditingQuestion(null); }} className="p-2 sm:p-3 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAddQuestion} className="space-y-6 sm:space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+              
+              <div className="flex-1 overflow-y-auto p-6 sm:p-10 custom-scrollbar">
+                <form onSubmit={handleAddQuestion} className="space-y-8 sm:space-y-10">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Subject</label>
                     <select
@@ -2033,7 +1998,7 @@ export default function Admin() {
                       theme="snow"
                       value={questionForm.title || ''}
                       onChange={(content) => setQuestionForm({ ...questionForm, title: content })}
-                      className="h-24 sm:h-32 mb-12 sm:mb-14"
+                      className="h-48 sm:h-64 mb-12"
                     />
                   </div>
                 </div>
@@ -2087,15 +2052,18 @@ export default function Admin() {
                       theme="snow"
                       value={questionForm.explanation || ''}
                       onChange={(content) => setQuestionForm({ ...questionForm, explanation: content })}
-                      className="h-24 sm:h-32 mb-12 sm:mb-14"
+                      className="h-48 sm:h-64 mb-12"
                     />
                   </div>
                 </div>
 
-                <button type="submit" className="w-full py-4 sm:py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
-                  {editingQuestion ? 'Update Question' : 'Save Question'}
-                </button>
+                <div className="pt-6">
+                  <button type="submit" className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                    {editingQuestion ? 'Update Question' : 'Save Question'}
+                  </button>
+                </div>
               </form>
+            </div>
           </div>
         </div>
       )}
