@@ -966,7 +966,125 @@ export default function Admin() {
         // Update local state
         setQuestions(prev => prev.map(q => q.id === editingQuestion.id ? { ...q, ...sanitizedForm } : q));
         
-        setMessage({ text: 'Question updated successfully', type: 'success' });
+        setMessage({ text: 'Question updated. Updating past results...', type: 'success' });
+        
+        // 1. Fetch all quiz results for this subject
+        const resultsQuery = query(collection(db, 'quizResults'), where('subjectId', '==', questionForm.subjectId));
+        const resultsSnap = await getDocs(resultsQuery);
+        
+        const affectedUserIds = new Set<string>();
+        let batch = writeBatch(db);
+        let batchCount = 0;
+
+        for (const resultDoc of resultsSnap.docs) {
+          const resultData = resultDoc.data() as QuizResult;
+          if (!resultData.questions) continue;
+
+          let needsUpdate = false;
+          const updatedQuestions = resultData.questions.map(q => {
+            if (q.id === editingQuestion.id) {
+              needsUpdate = true;
+              return { ...q, ...sanitizedForm };
+            }
+            return q;
+          });
+
+          if (needsUpdate) {
+            // Recalculate score
+            let newScore = 0;
+            updatedQuestions.forEach((q, idx) => {
+              if (resultData.selectedAnswers && resultData.selectedAnswers[idx] === q.correctAnswer) {
+                newScore++;
+              }
+            });
+
+            batch.update(resultDoc.ref, {
+              questions: updatedQuestions,
+              score: newScore
+            });
+            batchCount++;
+            affectedUserIds.add(resultData.userId);
+
+            if (batchCount % 400 === 0) {
+              await batch.commit();
+              batch = writeBatch(db);
+            }
+          }
+        }
+
+        if (batchCount % 400 !== 0) {
+          await batch.commit();
+        }
+
+        // 2. Recalculate points for affected users
+        if (affectedUserIds.size > 0) {
+          setMessage({ text: `Updating points for ${affectedUserIds.size} users...`, type: 'success' });
+          let userBatch = writeBatch(db);
+          let userBatchCount = 0;
+          
+          const updatedUsersList = [...users]; // To update local state
+
+          for (const userId of Array.from(affectedUserIds)) {
+             const userResultsQuery = query(collection(db, 'quizResults'), where('userId', '==', userId));
+             const userResultsSnap = await getDocs(userResultsQuery);
+             const userResults = userResultsSnap.docs.map(d => d.data() as QuizResult);
+             
+             let totalPoints = 0;
+             let totalQuestionsAnswered = 0;
+             let totalCorrectAnswers = 0;
+             let sectionPoints: Record<string, number> = {};
+             let completedQuizzes = userResults.length;
+
+             if (userResults.length > 0) {
+               userResults.forEach(r => {
+                 const sectionKey = r.sectionId || `${r.subjectId}_all`;
+                 const points = (r.score || 0);
+                 totalQuestionsAnswered += (r.totalQuestions || 0);
+                 totalCorrectAnswers += points;
+                 if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
+                   sectionPoints[sectionKey] = points;
+                 }
+               });
+               totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
+             }
+             
+             const userRef = doc(db, 'users', userId);
+             userBatch.update(userRef, {
+               points: totalPoints,
+               sectionPoints: sectionPoints,
+               completedQuizzes: completedQuizzes,
+               totalQuestionsAnswered,
+               totalCorrectAnswers
+             });
+             userBatchCount++;
+             
+             // Update local state array
+             const userIndex = updatedUsersList.findIndex(u => u.uid === userId);
+             if (userIndex !== -1) {
+               updatedUsersList[userIndex] = {
+                 ...updatedUsersList[userIndex],
+                 points: totalPoints,
+                 sectionPoints,
+                 completedQuizzes,
+                 totalQuestionsAnswered,
+                 totalCorrectAnswers
+               };
+             }
+
+             if (userBatchCount % 400 === 0) {
+               await userBatch.commit();
+               userBatch = writeBatch(db);
+             }
+          }
+          
+          if (userBatchCount % 400 !== 0) {
+            await userBatch.commit();
+          }
+          
+          setUsers(updatedUsersList);
+        }
+
+        setMessage({ text: 'Question and past results updated successfully', type: 'success' });
       } else {
         const docRef = doc(collection(db, 'questions'));
         const newQuestion = { ...sanitizedForm, id: docRef.id, createdAt: new Date().toISOString() } as any as Question;
