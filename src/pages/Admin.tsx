@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc, increment } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc, increment, getCountFromServer, limit, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
@@ -742,27 +742,53 @@ export default function Admin() {
       setSections(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Section)));
     }, (error) => console.error("Sections snapshot error:", error));
 
-    const unsubQuestions = onSnapshot(collection(db, 'questions'), (snapshot) => {
-      setQuestions(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question)));
-      setLoading(false);
-    }, (error) => console.error("Questions snapshot error:", error));
-
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      setUsers(snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
-    }, (error) => console.error("Users snapshot error:", error));
-
-    const unsubQuizResults = onSnapshot(collection(db, 'quizResults'), (snapshot) => {
-      setQuizResults(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as QuizResult)));
-    }, (error) => console.error("QuizResults snapshot error:", error));
+    // Initial load for analytics counts
+    const loadInitialCounts = async () => {
+      setLoading(true);
+      try {
+        // We only need counts for the initial view
+        const [qCount, uCount, rCount] = await Promise.all([
+          getCountFromServer(collection(db, 'questions')),
+          getCountFromServer(collection(db, 'users')),
+          getCountFromServer(collection(db, 'quizResults'))
+        ]);
+        // These are just for display if needed, but the actual data will be fetched per tab
+        setLoading(false);
+      } catch (err) {
+        console.error("Error loading initial counts:", err);
+        setLoading(false);
+      }
+    };
+    loadInitialCounts();
 
     return () => {
       unsubSubjects();
       unsubSections();
-      unsubQuestions();
-      unsubUsers();
-      unsubQuizResults();
     };
   }, []);
+
+  // Fetch data when tab changes
+  useEffect(() => {
+    const fetchDataForTab = async () => {
+      if (activeTab === 'questions' && questions.length === 0) {
+        setLoading(true);
+        const qSnap = await getDocs(query(collection(db, 'questions'), limit(1000))); // Limit to 1000 for safety
+        setQuestions(qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question)));
+        setLoading(false);
+      } else if (activeTab === 'users' && users.length === 0) {
+        setLoading(true);
+        const uSnap = await getDocs(collection(db, 'users'));
+        setUsers(uSnap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+        setLoading(false);
+      } else if (activeTab === 'quizResults' && quizResults.length === 0) {
+        setLoading(true);
+        const rSnap = await getDocs(query(collection(db, 'quizResults'), limit(500), orderBy('timestamp', 'desc')));
+        setQuizResults(rSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as QuizResult)));
+        setLoading(false);
+      }
+    };
+    fetchDataForTab();
+  }, [activeTab]);
 
   const toggleUserRole = async (user: UserProfile) => {
     try {
@@ -770,6 +796,10 @@ export default function Admin() {
       const userRef = doc(db, 'users', user.uid);
       const newRole = user.role === 'admin' ? 'student' : 'admin';
       await updateDoc(userRef, { role: newRole });
+      
+      // Update local state
+      setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, role: newRole } : u));
+      
       setMessage({ text: `User role updated to ${newRole} successfully`, type: 'success' });
     } catch (error: any) {
       try {
@@ -795,6 +825,10 @@ export default function Admin() {
         : [...allowedSubjects, subjectId];
 
       await updateDoc(userRef, { allowedSubjects: newAllowedSubjects });
+      
+      // Update local state
+      setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, allowedSubjects: newAllowedSubjects } : u));
+      
       setMessage({ text: 'Permissions updated successfully', type: 'success' });
     } catch (error: any) {
       try {
@@ -813,6 +847,10 @@ export default function Admin() {
     try {
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, { allowedDevices: count });
+      
+      // Update local state
+      setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, allowedDevices: count } : u));
+      
       setMessage({ text: 'Allowed devices updated successfully', type: 'success' });
     } catch (error: any) {
       try {
@@ -831,6 +869,10 @@ export default function Admin() {
     try {
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, { registeredDevices: [] });
+      
+      // Update local state
+      setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, registeredDevices: [] } : u));
+      
       setMessage({ text: 'Registered devices cleared successfully', type: 'success' });
     } catch (error: any) {
       try {
@@ -924,10 +966,19 @@ export default function Admin() {
 
       if (editingQuestion) {
         await updateDoc(doc(db, 'questions', editingQuestion.id), sanitizedForm);
+        
+        // Update local state
+        setQuestions(prev => prev.map(q => q.id === editingQuestion.id ? { ...q, ...sanitizedForm } : q));
+        
         setMessage({ text: 'Question updated successfully', type: 'success' });
       } else {
         const docRef = doc(collection(db, 'questions'));
-        await setDoc(docRef, { ...sanitizedForm, id: docRef.id, createdAt: new Date().toISOString() });
+        const newQuestion = { ...sanitizedForm, id: docRef.id, createdAt: new Date().toISOString() } as any as Question;
+        await setDoc(docRef, newQuestion);
+        
+        // Update local state
+        setQuestions(prev => [newQuestion, ...prev]);
+        
         setMessage({ text: 'Question added successfully', type: 'success' });
       }
       setQuestionForm({
@@ -984,6 +1035,19 @@ export default function Admin() {
       }
 
       await batch.commit();
+      
+      // Update local state
+      if (coll === 'subjects') {
+        setSubjects(prev => prev.filter(s => s.id !== id));
+        setSections(prev => prev.filter(s => s.subjectId !== id));
+        setQuestions(prev => prev.filter(q => q.subjectId !== id));
+      } else if (coll === 'sections') {
+        setSections(prev => prev.filter(s => s.id !== id));
+        setQuestions(prev => prev.filter(q => q.sectionId !== id));
+      } else if (coll === 'questions') {
+        setQuestions(prev => prev.filter(q => q.id !== id));
+      }
+      
       setMessage({ text: 'Deleted successfully along with associated content', type: 'success' });
     } catch (err: any) {
       try {
@@ -1064,6 +1128,10 @@ export default function Admin() {
         batch.delete(doc(db, 'questions', id));
       });
       await batch.commit();
+      
+      // Update local state
+      setQuestions(prev => prev.filter(q => !selectedQuestionIds.has(q.id)));
+      
       setSelectedQuestionIds(new Set());
       setMessage({ text: 'Selected questions deleted successfully', type: 'success' });
     } catch (err: any) {
@@ -1087,10 +1155,15 @@ export default function Admin() {
     setIsDeletingBulk(true);
     try {
       const batch = writeBatch(db);
+      const newSectionIdValue = sectionId === 'none' ? '' : sectionId;
       selectedQuestionIds.forEach(id => {
-        batch.update(doc(db, 'questions', id), { sectionId: sectionId === 'none' ? '' : sectionId });
+        batch.update(doc(db, 'questions', id), { sectionId: newSectionIdValue });
       });
       await batch.commit();
+      
+      // Update local state
+      setQuestions(prev => prev.map(q => selectedQuestionIds.has(q.id) ? { ...q, sectionId: newSectionIdValue } : q));
+      
       setSelectedQuestionIds(new Set());
       setMessage({ text: `Successfully moved ${selectedQuestionIds.size} questions`, type: 'success' });
     } catch (err: any) {

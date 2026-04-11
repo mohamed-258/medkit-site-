@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, query, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, getDocs, getCountFromServer } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { QuizResult, Question, UserProfile, Subject } from '../../types';
 import { Download, Users, Target, Clock, Activity, FileSpreadsheet, FileText } from 'lucide-react';
@@ -13,24 +13,59 @@ export default function AdminAnalytics() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState({
+    totalQuizzes: 0,
+    totalUsers: 0,
+    totalQuestions: 0
+  });
+  const [fullDataLoaded, setFullDataLoaded] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const [resSnap, usersSnap, qSnap, subSnap] = await Promise.all([
+    const fetchCounts = async () => {
+      setLoading(true);
+      try {
+        const [resSnap, usersSnap, qSnap, subSnap] = await Promise.all([
+          getCountFromServer(collection(db, 'quizResults')),
+          getCountFromServer(collection(db, 'users')),
+          getCountFromServer(collection(db, 'questions')),
+          getDocs(collection(db, 'subjects'))
+        ]);
+
+        setCounts({
+          totalQuizzes: resSnap.data().count,
+          totalUsers: usersSnap.data().count,
+          totalQuestions: qSnap.data().count
+        });
+        setSubjects(subSnap.docs.map(d => ({ ...d.data(), id: d.id } as Subject)));
+        setLoading(false);
+      } catch (err) {
+        console.error("Error fetching counts:", err);
+        setLoading(false);
+      }
+    };
+    fetchCounts();
+  }, []);
+
+  const loadFullData = async () => {
+    if (fullDataLoaded) return;
+    setLoading(true);
+    try {
+      const [resSnap, usersSnap, qSnap] = await Promise.all([
         getDocs(collection(db, 'quizResults')),
         getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'questions')),
-        getDocs(collection(db, 'subjects'))
+        getDocs(collection(db, 'questions'))
       ]);
 
       setResults(resSnap.docs.map(d => ({ ...d.data(), id: d.id } as QuizResult)));
       setUsers(usersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile)));
       setQuestions(qSnap.docs.map(d => ({ ...d.data(), id: d.id } as Question)));
-      setSubjects(subSnap.docs.map(d => ({ ...d.data(), id: d.id } as Subject)));
+      setFullDataLoaded(true);
       setLoading(false);
-    };
-    fetchData();
-  }, []);
+    } catch (err) {
+      console.error("Error loading full data:", err);
+      setLoading(false);
+    }
+  };
 
   const stats = useMemo(() => {
     if (!results.length) return null;
@@ -126,7 +161,10 @@ export default function AdminAnalytics() {
     };
   }, [results, questions, subjects, users]);
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
+    if (!fullDataLoaded) {
+      await loadFullData();
+    }
     if (!stats) return;
     
     // Create workbook
@@ -159,7 +197,10 @@ export default function AdminAnalytics() {
     XLSX.writeFile(wb, 'Medkit_Admin_Report.xlsx');
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
+    if (!fullDataLoaded) {
+      await loadFullData();
+    }
     if (!stats) return;
     const doc = new jsPDF();
     
@@ -230,7 +271,7 @@ export default function AdminAnalytics() {
           </div>
           <div>
             <p className="text-sm font-bold text-slate-400">Total Quizzes</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white">{stats.totalQuizzes}</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white">{counts.totalQuizzes}</p>
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
@@ -239,7 +280,7 @@ export default function AdminAnalytics() {
           </div>
           <div>
             <p className="text-sm font-bold text-slate-400">Average Score</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white">{stats.avgScore}%</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white">{stats?.avgScore || 0}%</p>
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
@@ -248,7 +289,7 @@ export default function AdminAnalytics() {
           </div>
           <div>
             <p className="text-sm font-bold text-slate-400">Active Students</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white">{stats.activeUsers} / {stats.totalUsers}</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white">{stats?.activeUsers || 0} / {counts.totalUsers}</p>
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
@@ -257,13 +298,28 @@ export default function AdminAnalytics() {
           </div>
           <div>
             <p className="text-sm font-bold text-slate-400">Quizzes/User</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white">{stats.avgQuizzesPerUser}</p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white">{stats?.avgQuizzesPerUser || 0}</p>
           </div>
         </div>
       </div>
 
-      {/* Most Difficult Questions */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+      {!fullDataLoaded && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-8 rounded-2xl border border-blue-100 dark:border-blue-800 text-center">
+          <h3 className="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">Detailed Analytics Available</h3>
+          <p className="text-blue-700 dark:text-blue-300 mb-6">Load detailed performance data, charts, and difficult questions analysis.</p>
+          <button 
+            onClick={loadFullData}
+            className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all"
+          >
+            Load Detailed Analytics
+          </button>
+        </div>
+      )}
+
+      {fullDataLoaded && (
+        <>
+          {/* Most Difficult Questions */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
         <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">Most Difficult Questions</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -299,6 +355,8 @@ export default function AdminAnalytics() {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

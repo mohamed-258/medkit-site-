@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment, getDoc, setDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { useAuth } from '../App';
@@ -208,16 +208,16 @@ export default function Quiz() {
 
           // Fetch question counts for each section
           const counts: Record<string, number> = {};
-          const allQuestionsSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', currentSubject.id)));
-          const allQuestions = allQuestionsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Question));
           
           // Count for "All Sections"
-          counts['all'] = allQuestions.length;
+          const allCountSnap = await getCountFromServer(query(collection(db, 'questions'), where('subjectId', '==', currentSubject.id)));
+          counts['all'] = allCountSnap.data().count;
           
           // Count for each specific section
-          sectionsList.forEach(section => {
-            counts[section.id] = allQuestions.filter(q => q.sectionId === section.id).length;
-          });
+          await Promise.all(sectionsList.map(async (section) => {
+            const sectionCountSnap = await getCountFromServer(query(collection(db, 'questions'), where('sectionId', '==', section.id)));
+            counts[section.id] = sectionCountSnap.data().count;
+          }));
           setSectionQuestionCounts(counts);
 
           // Calculate mistakes count

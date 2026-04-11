@@ -52,7 +52,9 @@ export default function Dashboard() {
 
     const resultsQuery = query(
       collection(db, 'quizResults'),
-      where('userId', '==', profile.uid)
+      where('userId', '==', profile.uid),
+      orderBy('timestamp', 'desc'),
+      limit(50)
     );
     const unsubResults = onSnapshot(resultsQuery, (snapshot) => {
       const all = snapshot.docs
