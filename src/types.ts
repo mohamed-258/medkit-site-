@@ -10,6 +10,8 @@ export interface UserProfile {
   role: UserRole;
   points: number;
   completedQuizzes: number;
+  totalQuestionsAnswered?: number;
+  totalCorrectAnswers?: number;
   sectionPoints?: Record<string, number>;
   allowedSubjects?: string[];
   allowedDevices?: number;

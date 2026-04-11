@@ -655,6 +655,8 @@ export default function Admin() {
       const user = userSnap.data() as UserProfile;
 
       let totalPoints = 0;
+      let totalQuestionsAnswered = 0;
+      let totalCorrectAnswers = 0;
       let sectionPoints: Record<string, number> = {};
       let completedQuizzes = userResults.length;
 
@@ -662,6 +664,8 @@ export default function Admin() {
         userResults.forEach(r => {
           const sectionKey = r.sectionId || `${r.subjectId}_all`;
           const points = (r.score || 0);
+          totalQuestionsAnswered += (r.totalQuestions || 0);
+          totalCorrectAnswers += points;
           if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
             sectionPoints[sectionKey] = points;
           }
@@ -672,17 +676,21 @@ export default function Admin() {
       const hasChanged = 
         user.points !== totalPoints || 
         user.completedQuizzes !== completedQuizzes ||
+        user.totalQuestionsAnswered !== totalQuestionsAnswered ||
+        user.totalCorrectAnswers !== totalCorrectAnswers ||
         JSON.stringify(user.sectionPoints || {}) !== JSON.stringify(sectionPoints);
 
       if (hasChanged) {
         await updateDoc(userRef, {
           points: totalPoints,
           sectionPoints: sectionPoints,
-          completedQuizzes: completedQuizzes
+          completedQuizzes: completedQuizzes,
+          totalQuestionsAnswered,
+          totalCorrectAnswers
         });
         
         // Update local state
-        setUsers(users.map(u => u.uid === userId ? { ...u, points: totalPoints, sectionPoints, completedQuizzes } : u));
+        setUsers(users.map(u => u.uid === userId ? { ...u, points: totalPoints, sectionPoints, completedQuizzes, totalQuestionsAnswered, totalCorrectAnswers } : u));
         setMessage({ text: `Successfully refreshed points for user!`, type: 'success' });
       } else {
         setMessage({ text: `Points are already up to date.`, type: 'success' });

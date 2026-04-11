@@ -110,7 +110,9 @@ export default function Quiz() {
       const newPoints = score;
       
       const updates: any = {
-        completedQuizzes: increment(1)
+        completedQuizzes: increment(1),
+        totalQuestionsAnswered: increment(questions.length),
+        totalCorrectAnswers: increment(score)
       };
 
       let pointsEarned = 0;
@@ -781,7 +783,7 @@ export default function Quiz() {
               </div>
 
               <div className="mb-8 flex items-start justify-between gap-4">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <span className={cn(
                     "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-4 inline-block",
                     currentQuestion.difficulty === 'easy' ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600" :
@@ -790,7 +792,7 @@ export default function Quiz() {
                   )}>
                     {currentQuestion.difficulty === 'easy' ? 'Easy' : currentQuestion.difficulty === 'medium' ? 'Medium' : 'Hard'}
                   </span>
-                  <div className="prose dark:prose-invert max-w-none text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white leading-relaxed" dangerouslySetInnerHTML={{ __html: currentQuestion.title }} />
+                  <div className="prose dark:prose-invert max-w-none text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-white leading-relaxed break-words overflow-wrap-anywhere overflow-x-auto" dangerouslySetInnerHTML={{ __html: currentQuestion.title }} />
                   {currentQuestion.imageUrl && (
                     <img src={currentQuestion.imageUrl} alt="Question" loading="lazy" className="mt-6 max-h-72 rounded-2xl object-contain border border-slate-100 dark:border-slate-800 shadow-sm" />
                   )}
@@ -883,7 +885,7 @@ export default function Quiz() {
                     <BookOpen size={18} />
                     Explanation
                   </h4>
-                  <div className="prose dark:prose-invert max-w-none text-sm text-blue-800 dark:text-blue-200" dangerouslySetInnerHTML={{ __html: currentQuestion.explanation }} />
+                  <div className="prose dark:prose-invert max-w-none text-sm text-blue-800 dark:text-blue-200 break-words overflow-wrap-anywhere overflow-x-auto" dangerouslySetInnerHTML={{ __html: currentQuestion.explanation }} />
                 </div>
               )}
             </div>

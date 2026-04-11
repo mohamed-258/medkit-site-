@@ -20,7 +20,6 @@ export default function Dashboard() {
   const location = useLocation();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [recentResults, setRecentResults] = useState<QuizResult[]>([]);
-  const [allResults, setAllResults] = useState<QuizResult[]>([]);
   const [subjectQuestionCounts, setSubjectQuestionCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [showLockedModal, setShowLockedModal] = useState(false);
@@ -80,8 +79,8 @@ export default function Dashboard() {
   }, [profile?.uid]);
 
   const stats = useMemo(() => {
-    const totalQuestions = allResults.reduce((acc, curr) => acc + curr.totalQuestions, 0);
-    const totalCorrect = allResults.reduce((acc, curr) => acc + curr.score, 0);
+    const totalQuestions = profile?.totalQuestionsAnswered || 0;
+    const totalCorrect = profile?.totalCorrectAnswers || 0;
     const averageScore = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
     
     // Calculate level based on points
@@ -97,16 +96,11 @@ export default function Dashboard() {
       totalAnswered: totalQuestions,
       level
     };
-  }, [allResults, profile]);
+  }, [profile]);
 
   const getSubjectProgress = (subjectId: string) => {
-    const subjectResults = allResults.filter(r => r.subjectId === subjectId);
-    if (subjectResults.length === 0) return 0;
-    const totalQuestions = subjectQuestionCounts[subjectId] || 1;
-    const uniqueAnswered = new Set();
-    // This is a simplified progress calculation
-    // In a real app, you'd track unique questions answered
-    return Math.min(Math.round((subjectResults.length * 5 / totalQuestions) * 100), 100);
+    // Simplified progress since we're not fetching all results to save resources
+    return 0;
   };
 
   const getSubjectStatus = (subjectId: string) => {
