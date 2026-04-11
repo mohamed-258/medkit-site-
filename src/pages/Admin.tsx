@@ -651,53 +651,54 @@ export default function Admin() {
       const usersSnap = await getDocs(collection(db, 'users'));
       const allUsers = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
 
-      const batch = writeBatch(db);
+      let batch = writeBatch(db);
       let updatedCount = 0;
 
       for (const user of allUsers) {
         const userResults = allResults.filter(r => r.userId === user.uid);
-        if (userResults.length === 0) {
-          // Reset points if no results
-          const userRef = doc(db, 'users', user.uid);
-          batch.update(userRef, {
-            points: 0,
-            sectionPoints: {},
-            completedQuizzes: 0
+        
+        let totalPoints = 0;
+        let sectionPoints: Record<string, number> = {};
+        let completedQuizzes = userResults.length;
+
+        if (userResults.length > 0) {
+          userResults.forEach(r => {
+            const sectionKey = r.sectionId || `${r.subjectId}_all`;
+            const points = (r.score || 0);
+            if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
+              sectionPoints[sectionKey] = points;
+            }
           });
-          updatedCount++;
-          continue;
+          totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
         }
 
-        const sectionPoints: Record<string, number> = {};
-        
-        userResults.forEach(r => {
-          const sectionKey = r.sectionId || `${r.subjectId}_all`;
-          const points = (r.score || 0);
-          if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
-            sectionPoints[sectionKey] = points;
+        // Check if data actually changed before adding to batch
+        const hasChanged = 
+          user.points !== totalPoints || 
+          user.completedQuizzes !== completedQuizzes ||
+          JSON.stringify(user.sectionPoints || {}) !== JSON.stringify(sectionPoints);
+
+        if (hasChanged) {
+          const userRef = doc(db, 'users', user.uid);
+          batch.update(userRef, {
+            points: totalPoints,
+            sectionPoints: sectionPoints,
+            completedQuizzes: completedQuizzes
+          });
+          updatedCount++;
+
+          // Commit in chunks of 500 (Firestore batch limit)
+          if (updatedCount % 500 === 0) {
+            await batch.commit();
+            batch = writeBatch(db);
           }
-        });
-
-        const totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
-        
-        const userRef = doc(db, 'users', user.uid);
-        batch.update(userRef, {
-          points: totalPoints,
-          sectionPoints: sectionPoints,
-          completedQuizzes: userResults.length
-        });
-        updatedCount++;
-
-        // Commit in chunks of 500 if needed (Firestore batch limit)
-        if (updatedCount % 500 === 0) {
-          await batch.commit();
-          // Start a new batch
-          // Note: This is a bit complex to handle properly with writeBatch in a loop, 
-          // but for now let's assume users < 500 or handle it simply.
         }
       }
 
-      await batch.commit();
+      // Commit any remaining updates
+      if (updatedCount % 500 !== 0) {
+        await batch.commit();
+      }
       setMessage({ text: `Successfully refreshed points for ${allUsers.length} users!`, type: 'success' });
     } catch (error) {
       console.error(error);
@@ -1164,6 +1165,16 @@ export default function Admin() {
         </div>
         
         <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+          <button
+            onClick={refreshAllPoints}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-slate-600 dark:text-slate-300 hover:text-blue-600 rounded-xl transition-all disabled:opacity-50"
+            title="Recalculate all user points from quiz results"
+          >
+            <RefreshCw size={18} className={cn(loading && "animate-spin")} />
+            <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">Refresh All Points</span>
+          </button>
+          <div className="w-px h-8 bg-slate-100 dark:bg-slate-800" />
           <div className="flex items-center gap-3 px-3">
             <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/20">
               {auth.currentUser?.displayName?.charAt(0) || 'A'}
