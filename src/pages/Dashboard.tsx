@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { collection, onSnapshot, query, orderBy, limit, getDocs, where, getCountFromServer } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where, getCountFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../App';
 import { Subject, UserProfile, QuizResult } from '../types';
@@ -36,40 +36,47 @@ export default function Dashboard() {
   useEffect(() => {
     if (!profile) return;
 
-    const unsubSubjects = onSnapshot(collection(db, 'subjects'), async (snapshot) => {
-      const subjectsData = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Subject));
-      setSubjects(subjectsData);
-      
-      const counts: Record<string, number> = {};
-      await Promise.all(subjectsData.map(async (subject) => {
-        const q = query(collection(db, 'questions'), where('subjectId', '==', subject.id));
-        const snapshot = await getCountFromServer(q);
-        counts[subject.id] = snapshot.data().count;
-      }));
-      setSubjectQuestionCounts(counts);
-      setLoading(false);
-    }, (error) => console.error("Subjects snapshot error:", error));
-
-    const resultsQuery = query(
-      collection(db, 'quizResults'),
-      where('userId', '==', profile.uid),
-      orderBy('timestamp', 'desc'),
-      limit(50)
-    );
-    const unsubResults = onSnapshot(resultsQuery, (snapshot) => {
-      const all = snapshot.docs
-        .map(doc => ({ ...doc.data(), id: doc.id } as QuizResult))
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setAllResults(all);
-      setRecentResults(all.slice(0, 5));
-    }, (error) => {
-      console.error("Error fetching results:", error);
-    });
-
-    return () => {
-      unsubSubjects();
-      unsubResults();
+    const fetchSubjects = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'subjects'));
+        const subjectsData = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Subject));
+        setSubjects(subjectsData);
+        
+        const counts: Record<string, number> = {};
+        await Promise.all(subjectsData.map(async (subject) => {
+          const q = query(collection(db, 'questions'), where('subjectId', '==', subject.id));
+          const countSnap = await getCountFromServer(q);
+          counts[subject.id] = countSnap.data().count;
+        }));
+        setSubjectQuestionCounts(counts);
+      } catch (error) {
+        console.error("Error fetching subjects:", error);
+      }
     };
+
+    const fetchRecentResults = async () => {
+      try {
+        const q = query(
+          collection(db, 'quizResults'),
+          where('userId', '==', profile.uid),
+          orderBy('timestamp', 'desc'),
+          limit(5)
+        );
+        const snapshot = await getDocs(q);
+        const results = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as QuizResult));
+        setRecentResults(results);
+      } catch (error) {
+        console.error("Error fetching recent results:", error);
+      }
+    };
+
+    const loadData = async () => {
+      setLoading(true);
+      await Promise.all([fetchSubjects(), fetchRecentResults()]);
+      setLoading(false);
+    };
+
+    loadData();
   }, [profile?.uid]);
 
   const stats = useMemo(() => {
@@ -185,7 +192,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-black text-slate-900 dark:text-white">Your Subjects</h2>
             <Link to="/subjects" className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 group">
-              View All Subjects <ArrowUpRight size={18} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              View All <ArrowUpRight size={18} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </Link>
           </div>
 
@@ -211,75 +218,69 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sidebar Content */}
-        <div className="space-y-10">
-          {/* Recent Activity */}
-          <div className="space-y-6">
+        {/* Recent Activity Section */}
+        <div className="space-y-8">
+          <div className="flex items-center justify-between">
             <h2 className="text-2xl font-black text-slate-900 dark:text-white">Recent Activity</h2>
-            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-              <div className="p-8 space-y-8">
-                {recentResults.length > 0 ? (
-                  recentResults.map((result, i) => (
-                    <div key={result.id} className="flex items-center justify-between group">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-blue-600 transition-colors">
-                          <Clock size={24} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[140px]">
-                            {subjects.find(s => s.id === result.subjectId)?.nameEn || 'Medical Quiz'}
-                          </p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                            {new Date(result.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-black text-emerald-600">{Math.round((result.score / result.totalQuestions) * 100)}%</p>
-                        <Link to={`/result/${result.id}`} className="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-widest">Review</Link>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-12">
-                    <Activity size={48} className="mx-auto text-slate-200 mb-4" />
-                    <p className="text-sm font-bold text-slate-400">No recent activity yet</p>
-                  </div>
-                )}
-              </div>
-              <Link to="/quizzes" className="block w-full py-5 bg-slate-50 dark:bg-slate-800/50 text-center text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-600 transition-colors border-t border-slate-100 dark:border-slate-800">
-                View All Activity
-              </Link>
-            </div>
           </div>
 
-          {/* Milestone Card */}
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] p-10 text-white relative overflow-hidden shadow-2xl shadow-blue-500/30">
-            <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
-            <div className="relative z-10">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-inner">
-                  <Trophy size={28} />
-                </div>
-                <div>
-                  <h3 className="font-black text-lg">Next Milestone</h3>
-                  <p className="text-blue-100 text-xs font-bold uppercase tracking-widest">Fast Learner</p>
-                </div>
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+            {recentResults.length > 0 ? (
+              <div className="divide-y divide-slate-50 dark:divide-slate-800">
+                {recentResults.map((result, i) => {
+                  const subject = subjects.find(s => s.id === result.subjectId);
+                  const scorePercent = Math.round((result.score / result.totalQuestions) * 100);
+                  
+                  return (
+                    <motion.div
+                      key={result.id}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      className="p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className={cn(
+                            "w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner",
+                            scorePercent >= 80 ? "bg-emerald-50 text-emerald-600" : 
+                            scorePercent >= 50 ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-600"
+                          )}>
+                            <Award size={24} />
+                          </div>
+                          <div>
+                            <h4 className="font-black text-slate-900 dark:text-white text-sm line-clamp-1">
+                              {subject?.nameEn || 'Quiz Result'}
+                            </h4>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                              {new Date(result.timestamp).toLocaleDateString()} • {result.totalQuestions} Questions
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={cn(
+                            "text-lg font-black",
+                            scorePercent >= 80 ? "text-emerald-600" : 
+                            scorePercent >= 50 ? "text-blue-600" : "text-red-600"
+                          )}>
+                            {scorePercent}%
+                          </p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Score</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
-              <p className="text-blue-50 text-sm leading-relaxed mb-8">Complete 3 more quizzes this week to earn your next badge and 500 bonus points!</p>
-              <div className="space-y-3 mb-10">
-                <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                  <span>Progress</span>
-                  <span>60%</span>
+            ) : (
+              <div className="p-12 text-center space-y-4">
+                <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-slate-300 mx-auto">
+                  <Clock size={32} />
                 </div>
-                <div className="w-full bg-white/20 rounded-full h-2.5 overflow-hidden">
-                  <div className="bg-white h-full rounded-full" style={{ width: '60%' }}></div>
-                </div>
+                <p className="text-slate-500 font-medium">No recent activity yet.</p>
+                <Link to="/subjects" className="text-sm font-bold text-blue-600 hover:underline inline-block">Start your first quiz</Link>
               </div>
-              <button className="w-full py-4 bg-white text-blue-600 rounded-2xl font-black text-sm hover:bg-blue-50 transition-all active:scale-95 shadow-lg">
-                View Achievements
-              </button>
-            </div>
+            )}
           </div>
         </div>
       </div>

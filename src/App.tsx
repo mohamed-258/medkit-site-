@@ -156,9 +156,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
           if (docSnap.exists()) {
             const data = docSnap.data() as UserProfile;
             
-            // Auto-upgrade owner role if needed
+            // Auto-upgrade owner role if needed - Only if not already owner to save writes
             if (user.email === 'mhsn68503@gmail.com' && data.role !== 'owner') {
-              await updateDoc(docRef, { role: 'owner' });
+              updateDoc(docRef, { role: 'owner' }).catch(console.error);
               data.role = 'owner';
             }
             
@@ -170,9 +170,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
               
               if (!registered.includes(deviceId)) {
                 if (registered.length < allowed) {
-                  // Register this device
+                  // Register this device - Use a non-blocking background update
                   const newRegistered = [...registered, deviceId];
-                  await setDoc(docRef, { registeredDevices: newRegistered }, { merge: true });
+                  updateDoc(docRef, { registeredDevices: newRegistered }).catch(console.error);
                   data.registeredDevices = newRegistered;
                 } else {
                   // Max devices reached

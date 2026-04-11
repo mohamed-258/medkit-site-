@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc, increment, getCountFromServer, limit, orderBy } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc, increment, getCountFromServer, limit, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
@@ -157,12 +157,11 @@ function SortableSubSection({ sub, subQuestions, onEdit, onDelete }: { sub: Sect
 }
 
 export default function Admin() {
-  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'quizResults' | 'analytics'>('subjects');
+  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'analytics'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
@@ -642,67 +641,55 @@ export default function Admin() {
     }
   };
 
-  const refreshAllPoints = async () => {
+  const refreshUserPoints = async (userId: string) => {
     setLoading(true);
-    setMessage({ text: 'Recalculating all user points...', type: 'success' });
+    setMessage({ text: 'Recalculating user points...', type: 'success' });
     try {
-      const resultsSnap = await getDocs(collection(db, 'quizResults'));
-      const allResults = resultsSnap.docs.map(d => d.data() as QuizResult);
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const allUsers = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
+      const q = query(collection(db, 'quizResults'), where('userId', '==', userId));
+      const resultsSnap = await getDocs(q);
+      const userResults = resultsSnap.docs.map(d => d.data() as QuizResult);
+      
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) throw new Error("User not found");
+      const user = userSnap.data() as UserProfile;
 
-      let batch = writeBatch(db);
-      let updatedCount = 0;
+      let totalPoints = 0;
+      let sectionPoints: Record<string, number> = {};
+      let completedQuizzes = userResults.length;
 
-      for (const user of allUsers) {
-        const userResults = allResults.filter(r => r.userId === user.uid);
-        
-        let totalPoints = 0;
-        let sectionPoints: Record<string, number> = {};
-        let completedQuizzes = userResults.length;
-
-        if (userResults.length > 0) {
-          userResults.forEach(r => {
-            const sectionKey = r.sectionId || `${r.subjectId}_all`;
-            const points = (r.score || 0);
-            if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
-              sectionPoints[sectionKey] = points;
-            }
-          });
-          totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
-        }
-
-        // Check if data actually changed before adding to batch
-        const hasChanged = 
-          user.points !== totalPoints || 
-          user.completedQuizzes !== completedQuizzes ||
-          JSON.stringify(user.sectionPoints || {}) !== JSON.stringify(sectionPoints);
-
-        if (hasChanged) {
-          const userRef = doc(db, 'users', user.uid);
-          batch.update(userRef, {
-            points: totalPoints,
-            sectionPoints: sectionPoints,
-            completedQuizzes: completedQuizzes
-          });
-          updatedCount++;
-
-          // Commit in chunks of 500 (Firestore batch limit)
-          if (updatedCount % 500 === 0) {
-            await batch.commit();
-            batch = writeBatch(db);
+      if (userResults.length > 0) {
+        userResults.forEach(r => {
+          const sectionKey = r.sectionId || `${r.subjectId}_all`;
+          const points = (r.score || 0);
+          if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
+            sectionPoints[sectionKey] = points;
           }
-        }
+        });
+        totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
       }
 
-      // Commit any remaining updates
-      if (updatedCount % 500 !== 0) {
-        await batch.commit();
+      const hasChanged = 
+        user.points !== totalPoints || 
+        user.completedQuizzes !== completedQuizzes ||
+        JSON.stringify(user.sectionPoints || {}) !== JSON.stringify(sectionPoints);
+
+      if (hasChanged) {
+        await updateDoc(userRef, {
+          points: totalPoints,
+          sectionPoints: sectionPoints,
+          completedQuizzes: completedQuizzes
+        });
+        
+        // Update local state
+        setUsers(users.map(u => u.uid === userId ? { ...u, points: totalPoints, sectionPoints, completedQuizzes } : u));
+        setMessage({ text: `Successfully refreshed points for user!`, type: 'success' });
+      } else {
+        setMessage({ text: `Points are already up to date.`, type: 'success' });
       }
-      setMessage({ text: `Successfully refreshed points for ${allUsers.length} users!`, type: 'success' });
     } catch (error) {
       console.error(error);
-      setMessage({ text: 'Failed to refresh points. See console for details.', type: 'error' });
+      setMessage({ text: 'Failed to refresh points.', type: 'error' });
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(null), 3000);
@@ -731,16 +718,24 @@ export default function Admin() {
   });
 
   useEffect(() => {
-    const unsubSubjects = onSnapshot(collection(db, 'subjects'), (snapshot) => {
-      setSubjects(snapshot.docs.map(doc => {
-        const data = doc.data();
-        return { ...data, manualId: data.id, id: doc.id } as Subject & { manualId?: string };
-      }));
-    }, (error) => console.error("Subjects snapshot error:", error));
-
-    const unsubSections = onSnapshot(collection(db, 'sections'), (snapshot) => {
-      setSections(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Section)));
-    }, (error) => console.error("Sections snapshot error:", error));
+    const fetchSubjectsAndSections = async () => {
+      try {
+        const [subSnap, secSnap] = await Promise.all([
+          getDocs(collection(db, 'subjects')),
+          getDocs(collection(db, 'sections'))
+        ]);
+        
+        setSubjects(subSnap.docs.map(doc => {
+          const data = doc.data();
+          return { ...data, manualId: data.id, id: doc.id } as Subject & { manualId?: string };
+        }));
+        
+        setSections(secSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Section)));
+      } catch (err) {
+        console.error("Error fetching initial admin data:", err);
+      }
+    };
+    fetchSubjectsAndSections();
 
     // Initial load for analytics counts
     const loadInitialCounts = async () => {
@@ -762,8 +757,6 @@ export default function Admin() {
     loadInitialCounts();
 
     return () => {
-      unsubSubjects();
-      unsubSections();
     };
   }, []);
 
@@ -779,11 +772,6 @@ export default function Admin() {
         setLoading(true);
         const uSnap = await getDocs(collection(db, 'users'));
         setUsers(uSnap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
-        setLoading(false);
-      } else if (activeTab === 'quizResults' && quizResults.length === 0) {
-        setLoading(true);
-        const rSnap = await getDocs(query(collection(db, 'quizResults'), limit(500), orderBy('timestamp', 'desc')));
-        setQuizResults(rSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as QuizResult)));
         setLoading(false);
       }
     };
@@ -1238,16 +1226,6 @@ export default function Admin() {
         </div>
         
         <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
-          <button
-            onClick={refreshAllPoints}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-slate-600 dark:text-slate-300 hover:text-blue-600 rounded-xl transition-all disabled:opacity-50"
-            title="Recalculate all user points from quiz results"
-          >
-            <RefreshCw size={18} className={cn(loading && "animate-spin")} />
-            <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">Refresh All Points</span>
-          </button>
-          <div className="w-px h-8 bg-slate-100 dark:bg-slate-800" />
           <div className="flex items-center gap-3 px-3">
             <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/20">
               {auth.currentUser?.displayName?.charAt(0) || 'A'}
@@ -1271,8 +1249,7 @@ export default function Admin() {
               { id: 'subjects', label: 'Subjects' },
               { id: 'sections', label: 'Sections' },
               { id: 'questions', label: 'Questions' },
-              { id: 'users', label: 'Users' },
-              { id: 'quizResults', label: 'Quiz Results' }
+              { id: 'users', label: 'Users' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1528,68 +1505,8 @@ export default function Admin() {
           onToggleSubjectAccess={toggleSubjectAccess}
           onUpdateAllowedDevices={updateAllowedDevices}
           onClearDevices={clearRegisteredDevices}
-          onRefreshPoints={refreshAllPoints}
+          onRefreshPoints={refreshUserPoints}
         />
-      ) : activeTab === 'quizResults' ? (
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white">Quiz Analytics</h2>
-              <p className="text-sm text-slate-400 mt-1">Review student performance across all subjects.</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Object.entries(quizResults.reduce((acc, result) => {
-              if (!acc[result.userId]) acc[result.userId] = [];
-              acc[result.userId].push(result);
-              return acc;
-            }, {} as Record<string, QuizResult[]>)).map(([userId, results]) => {
-              const user = users.find(u => u.uid === userId);
-              const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
-              const totalQuestions = results.reduce((sum, r) => sum + r.totalQuestions, 0);
-              const totalCorrect = results.reduce((sum, r) => sum + r.score, 0);
-              const accuracy = (totalCorrect / totalQuestions) * 100;
-
-              return (
-                <div key={userId} className="group bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-blue-500/20">
-                      {(user?.displayName || user?.email || '?').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="font-black text-slate-900 dark:text-white text-lg leading-tight">
-                        {user?.displayName || 'Unknown User'}
-                      </h3>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{results.length} Quizzes Taken</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Avg Score</p>
-                      <p className="text-xl font-black text-blue-600">{avgScore.toFixed(1)}</p>
-                    </div>
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Accuracy</p>
-                      <p className="text-xl font-black text-emerald-500">{accuracy.toFixed(0)}%</p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={async () => {
-                      if (confirm('Are you sure you want to delete all quiz results for this user?')) {
-                        await Promise.all(results.map(handleDeleteQuizResult));
-                      }
-                    }}
-                    className="w-full py-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-100 transition-all"
-                  >
-                    Clear History
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </section>
       ) : (
         <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">

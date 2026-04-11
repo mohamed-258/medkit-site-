@@ -13,19 +13,7 @@ export default function StudentAnalytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!profile) return;
-    const fetchData = async () => {
-      const q = query(collection(db, 'quizResults'), where('userId', '==', profile.uid));
-      const [resSnap, subSnap] = await Promise.all([
-        getDocs(q),
-        getDocs(collection(db, 'subjects'))
-      ]);
-
-      setResults(resSnap.docs.map(d => ({ ...d.data(), id: d.id } as QuizResult)));
-      setSubjects(subSnap.docs.map(d => ({ ...d.data(), id: d.id } as Subject)));
-      setLoading(false);
-    };
-    fetchData();
+    setLoading(false);
   }, [profile]);
 
   const stats = useMemo(() => {
@@ -91,22 +79,6 @@ export default function StudentAnalytics() {
     };
   }, [results, subjects]);
 
-  if (loading) {
-    return <div className="flex items-center justify-center p-12"><div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
-  }
-
-  if (!stats) {
-    return (
-      <div className="text-center py-20">
-        <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-3xl flex items-center justify-center text-slate-400 mx-auto mb-6">
-          <AlertCircle size={40} />
-        </div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Not Enough Data</h2>
-        <p className="text-slate-500 max-w-md mx-auto">Take a few quizzes to unlock your personalized analytics dashboard.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -116,46 +88,14 @@ export default function StudentAnalytics() {
         </div>
       </div>
 
-      {/* AI Insights & Predictions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 rounded-[2.5rem] text-white shadow-xl shadow-blue-500/20 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                <Target size={24} />
-              </div>
-              <div>
-                <h3 className="font-black text-lg">Predicted Score</h3>
-                <p className="text-blue-100 text-xs font-bold uppercase tracking-widest">Next Exam Estimate</p>
-              </div>
-            </div>
-            <div className="flex items-end gap-4">
-              <span className="text-6xl font-black">{stats.predictedScore}%</span>
-              <span className="text-blue-200 font-medium mb-2">Based on recent performance</span>
-            </div>
-          </div>
+      <div className="bg-amber-50 dark:bg-amber-900/20 p-10 rounded-[2.5rem] border border-amber-100 dark:border-amber-800 text-center">
+        <div className="w-20 h-20 bg-amber-100 dark:bg-amber-800 rounded-3xl flex items-center justify-center text-amber-600 mx-auto mb-6">
+          <AlertCircle size={40} />
         </div>
-
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 text-amber-500 rounded-2xl flex items-center justify-center">
-              <Sparkles size={24} />
-            </div>
-            <h3 className="font-black text-lg text-slate-900 dark:text-white">Study Recommendations</h3>
-          </div>
-          <ul className="space-y-4">
-            {stats.recommendations.map((rec, i) => (
-              <li key={i} className="flex items-start gap-3 text-slate-600 dark:text-slate-300 font-medium">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-2 shrink-0" />
-                {rec}
-              </li>
-            ))}
-            {stats.recommendations.length === 0 && (
-              <li className="text-slate-500 italic">Keep taking quizzes to get personalized recommendations.</li>
-            )}
-          </ul>
-        </div>
+        <h3 className="text-2xl font-black text-amber-900 dark:text-amber-100 mb-4">Analytics Currently Disabled</h3>
+        <p className="text-amber-700 dark:text-amber-300 max-w-md mx-auto leading-relaxed">
+          To ensure the platform remains available for everyone within our daily resource limits, detailed analytics have been temporarily disabled. You can still take quizzes and see your results immediately after finishing.
+        </p>
       </div>
     </div>
   );

@@ -12,7 +12,8 @@ import {
   Star,
   Calendar,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  RefreshCw
 } from 'lucide-react';
 
 // --- Types ---
@@ -46,7 +47,7 @@ interface ManageUsersPanelProps {
   onToggleSubjectAccess: (user: UserProfile, subjectId: string) => Promise<void>;
   onUpdateAllowedDevices: (user: UserProfile, count: number) => Promise<void>;
   onClearDevices: (user: UserProfile) => Promise<void>;
-  onRefreshPoints: () => Promise<void>;
+  onRefreshPoints: (userId: string) => Promise<void>;
 }
 
 // --- Utility ---
@@ -270,20 +271,30 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
 
                         {/* Actions */}
                         <td className="py-4 px-4 text-right">
-                          {user.role !== 'owner' && (
+                          <div className="flex items-center justify-end gap-2">
                             <button
-                              onClick={(e) => handleAction(e, () => onToggleRole(user), user.uid)}
+                              onClick={(e) => handleAction(e, () => onRefreshPoints(user.uid), user.uid)}
                               disabled={updatingId === user.uid}
-                              className={cn(
-                                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                                user.role === 'admin' 
-                                  ? "bg-amber-50 text-amber-600 hover:bg-amber-100" 
-                                  : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                              )}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                              title="Refresh User Points"
                             >
-                              {user.role === 'admin' ? 'Demote' : 'Promote'}
+                              <RefreshCw size={16} className={cn(updatingId === user.uid && "animate-spin")} />
                             </button>
-                          )}
+                            {user.role !== 'owner' && (
+                              <button
+                                onClick={(e) => handleAction(e, () => onToggleRole(user), user.uid)}
+                                disabled={updatingId === user.uid}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                                  user.role === 'admin' 
+                                    ? "bg-amber-50 text-amber-600 hover:bg-amber-100" 
+                                    : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                                )}
+                              >
+                                {user.role === 'admin' ? 'Demote' : 'Promote'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
 
