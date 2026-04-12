@@ -95,8 +95,8 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
 
     const query = search.toLowerCase();
     return uniqueUsers.filter(user => 
-      user.displayName.toLowerCase().includes(query) || 
-      user.email.toLowerCase().includes(query)
+      (user.displayName || '').toLowerCase().includes(query) || 
+      (user.email || '').toLowerCase().includes(query)
     );
   }, [users, search]);
 
@@ -194,12 +194,12 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
                             <div className="size-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm">
-                              {user.displayName.charAt(0).toUpperCase()}
+                              {(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-blue-600 transition-colors">
-                                  {user.displayName}
+                                  {user.displayName || user.email || 'Unknown User'}
                                 </span>
                                 {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                               </div>

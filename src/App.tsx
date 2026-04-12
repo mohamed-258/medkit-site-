@@ -1,10 +1,9 @@
 import { useState, useEffect, createContext, useContext, ReactNode, lazy, Suspense } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
-import { onAuthStateChanged, User, signOut, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, getDocFromServer, updateDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
-
-import { handleFirestoreError, OperationType } from './lib/firestore-errors';
+import { supabase } from './supabase';
+import { auth, googleProvider } from './firebase';
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { handleSupabaseError, OperationType } from './lib/supabase-errors';
 
 // Error Boundary Component
 import React, { Component, ErrorInfo } from 'react';
@@ -83,7 +82,7 @@ function cn(...inputs: ClassValue[]) {
 
 // Auth Context
 interface AuthContextType {
-  user: User | null;
+  user: any | null;
   profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
@@ -118,7 +117,7 @@ const PageLoader = () => (
 );
 
 function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -132,146 +131,185 @@ function AuthProvider({ children }: { children: ReactNode }) {
     return deviceId;
   };
 
+  const mapUserToProfile = (data: any): UserProfile => ({
+    uid: data.uid,
+    email: data.email,
+    displayName: data.display_name,
+    firstName: data.first_name,
+    fatherName: data.father_name,
+    dateOfBirth: data.date_of_birth,
+    role: data.role,
+    points: data.points,
+    completedQuizzes: data.completed_quizzes,
+    totalQuestionsAnswered: data.total_questions_answered,
+    totalCorrectAnswers: data.total_correct_answers,
+    sectionPoints: data.section_points,
+    allowedSubjects: data.allowed_subjects,
+    allowedDevices: data.allowed_devices,
+    registeredDevices: data.registered_devices,
+    createdAt: data.created_at,
+  });
+
   useEffect(() => {
-    // Validate connection to Firestore
-    async function testConnection() {
+    let subscription: any;
+
+    const testConnection = async () => {
       try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if(error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration. Firestore client is offline.");
+        const { testSupabaseConnection } = await import('./supabase');
+        const result = await testSupabaseConnection();
+        if (!result.ok) {
+          console.error("Supabase Connection Critical Error:", result.error);
+          // If it's a fetch error, it might be a network issue or wrong URL
+          if (result.error?.includes('Failed to fetch')) {
+            console.warn("Network Error: Please check if your internet connection is stable and if the Supabase URL is correct.");
+          }
+        } else if (result.warning) {
+          console.warn("Supabase Connection Warning:", result.warning);
+        } else {
+          console.log("Supabase Connection Test Successful");
         }
+      } catch (e) {
+        console.error("Failed to import or test Supabase connection", e);
       }
-    }
+    };
+
     testConnection();
 
-    let unsubscribeProfile: () => void;
+    const fetchProfile = async (sessionUser: any) => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('uid', sessionUser.uid)
+          .single();
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (unsubscribeProfile) unsubscribeProfile();
-      setUser(user);
-      if (user) {
-        const docRef = doc(db, 'users', user.uid);
-        unsubscribeProfile = onSnapshot(docRef, async (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data() as UserProfile;
-            
-            // Auto-upgrade owner role if needed - Only if not already owner to save writes
-            if (user.email === 'mhsn68503@gmail.com' && data.role !== 'owner') {
-              updateDoc(docRef, { role: 'owner' }).catch(console.error);
-              data.role = 'owner';
-            }
-            
-            // Device Check Logic
-            if (user.email !== 'mhsn68503@gmail.com') {
-              const deviceId = getDeviceId();
-              const allowed = data.allowedDevices || 1;
-              const registered = data.registeredDevices || [];
-              
-              if (!registered.includes(deviceId)) {
-                if (registered.length < allowed) {
-                  // Register this device - Use a non-blocking background update
-                  const newRegistered = [...registered, deviceId];
-                  updateDoc(docRef, { registeredDevices: newRegistered }).catch(console.error);
-                  data.registeredDevices = newRegistered;
-                } else {
-                  // Max devices reached
-                  setAuthError('عذراً، هذا الحساب مسجل على الحد الأقصى من الأجهزة المسموح بها. يرجى التواصل مع الإدارة.');
-                  await signOut(auth);
-                  setProfile(null);
-                  setUser(null);
-                  setLoading(false);
-                  return;
-                }
+        if (error && error.code !== 'PGRST116') throw error;
+
+        if (data) {
+          let mappedData = mapUserToProfile(data);
+
+          if (sessionUser.email === 'mhsn68503@gmail.com' && mappedData.role !== 'owner') {
+            await supabase.from('users').update({ role: 'owner' }).eq('uid', sessionUser.uid);
+            mappedData.role = 'owner';
+          }
+
+          if (sessionUser.email !== 'mhsn68503@gmail.com') {
+            const deviceId = getDeviceId();
+            const allowed = mappedData.allowedDevices || 1;
+            const registered = mappedData.registeredDevices || [];
+
+            if (!registered.includes(deviceId)) {
+              if (registered.length < allowed) {
+                const newRegistered = [...registered, deviceId];
+                await supabase.from('users').update({ registered_devices: newRegistered }).eq('uid', sessionUser.uid);
+                mappedData.registeredDevices = newRegistered;
+              } else {
+                setAuthError('عذراً، هذا الحساب مسجل على الحد الأقصى من الأجهزة المسموح بها. يرجى التواصل مع الإدارة.');
+                await signOut(auth);
+                setProfile(null);
+                setUser(null);
+                setLoading(false);
+                return;
               }
             }
-            
-            setAuthError(null);
-            setProfile(data);
-          } else {
-            // Create profile if it doesn't exist
-            const deviceId = getDeviceId();
-            const newProfile: UserProfile = {
-              uid: user.uid,
-              email: user.email || '',
-              displayName: user.displayName || 'Student',
-              role: user.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
-              points: 0,
-              completedQuizzes: 0,
-              allowedDevices: 1,
-              registeredDevices: [deviceId],
-              createdAt: new Date().toISOString(),
-            };
-            setDoc(docRef, newProfile).catch(err => handleFirestoreError(err, OperationType.WRITE, 'users/' + user.uid));
-            setProfile(newProfile);
           }
-          setLoading(false);
-        }, (error) => {
-          try {
-            handleFirestoreError(error, OperationType.GET, 'users/' + user.uid);
-          } catch (firestoreErr: any) {
-            if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-              throw firestoreErr;
-            }
-            console.error(firestoreErr);
-          } finally {
-            setLoading(false);
-          }
-        });
+
+          setAuthError(null);
+          setProfile(mappedData);
+        } else {
+          const deviceId = getDeviceId();
+          const newProfile = {
+            uid: sessionUser.uid,
+            email: sessionUser.email || '',
+            display_name: sessionUser.displayName || 'Student',
+            role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
+            points: 0,
+            completed_quizzes: 0,
+            allowed_devices: 1,
+            registered_devices: [deviceId],
+            created_at: new Date().toISOString(),
+          };
+          await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
+          setProfile(mapUserToProfile(newProfile));
+        }
+
+        // Setup realtime subscription
+        if (subscription) {
+          supabase.removeChannel(subscription);
+        }
+        subscription = supabase.channel(`public:users:uid=eq.${sessionUser.uid}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `uid=eq.${sessionUser.uid}` }, payload => {
+            setProfile(mapUserToProfile(payload.new));
+          })
+          .subscribe();
+
+      } catch (err: any) {
+        console.error("Error fetching profile:", err);
+        setAuthError(err.message || "حدث خطأ أثناء جلب بيانات المستخدم. يرجى المحاولة لاحقاً.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (sessionUser) => {
+      if (sessionUser) {
+        setUser(sessionUser);
+        fetchProfile(sessionUser);
       } else {
+        setUser(null);
         setProfile(null);
         setLoading(false);
+        if (subscription) supabase.removeChannel(subscription);
       }
     });
 
     return () => {
-      unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
+      unsubscribe();
+      if (subscription) supabase.removeChannel(subscription);
     };
   }, []);
 
   const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({
-      prompt: 'select_account'
-    });
     try {
-      await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        return;
-      }
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      console.error("Google login error:", err);
       throw err;
     }
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
-    const userCredential = await signInWithEmailAndPassword(auth, email, pass);
-    if (!userCredential.user.emailVerified) {
-      await signOut(auth);
-      throw new Error('email-not-verified');
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (err) {
+      console.error("Email login error:", err);
+      throw err;
     }
   };
 
   const registerWithEmail = async (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-    const user = userCredential.user;
-    
-    const newProfile: UserProfile = {
-      uid: user.uid,
-      email: user.email || '',
-      displayName: `${data.firstName} ${data.fatherName}`,
-      firstName: data.firstName,
-      fatherName: data.fatherName,
-      dateOfBirth: data.dateOfBirth,
-      role: user.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
-      points: 0,
-      completedQuizzes: 0,
-    };
-    await setDoc(doc(db, 'users', user.uid), newProfile).catch(err => handleFirestoreError(err, OperationType.WRITE, 'users/' + user.uid));
-    
-    await sendEmailVerification(user);
-    await signOut(auth);
+    try {
+      const { user: authUser } = await createUserWithEmailAndPassword(auth, email, pass);
+      
+      if (authUser) {
+        const newProfile = {
+          uid: authUser.uid,
+          email: authUser.email || '',
+          display_name: `${data.firstName} ${data.fatherName}`,
+          first_name: data.firstName,
+          father_name: data.fatherName,
+          date_of_birth: data.dateOfBirth,
+          role: authUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
+          points: 0,
+          completed_quizzes: 0,
+        };
+        await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
+      }
+      await signOut(auth);
+    } catch (err) {
+      console.error("Registration error:", err);
+      throw err;
+    }
   };
 
   const logout = async () => {

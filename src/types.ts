@@ -34,6 +34,7 @@ export interface Section {
   nameAr?: string;
   nameEn?: string;
   order?: number;
+  createdAt?: string;
 }
 
 export interface Question {
@@ -47,6 +48,7 @@ export interface Question {
   explanation: string;
   difficulty: 'easy' | 'medium' | 'hard';
   order?: number;
+  createdAt?: string;
 }
 
 export interface QuizResult {

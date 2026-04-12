@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment, getDoc, setDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
-import { db, auth } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
+import { supabase } from '../supabase';
+import { handleSupabaseError, OperationType } from '../lib/supabase-errors';
 import { useAuth } from '../App';
 import { Question, Subject, QuizResult, Section } from '../types';
 import { BookOpen, Clock, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, ArrowLeft, Trophy, Zap, Star, LayoutGrid, Flag, ChevronDown } from 'lucide-react';
@@ -101,28 +100,37 @@ export default function Quiz() {
       });
 
       // Save result
-      await addDoc(collection(db, 'quizResults'), resultData);
+      await supabase.from('quiz_results').insert({
+        id: resultId,
+        user_id: profile!.uid,
+        subject_id: subjectId!,
+        section_id: selectedSectionId || null,
+        score,
+        total_questions: questions.length,
+        timestamp: new Date().toISOString(),
+        questions,
+        selected_answers: selectedAnswers,
+      });
       
       // Update user profile
-      const userRef = doc(db, 'users', profile!.uid);
       const sectionKey = selectedSectionId || `${subjectId}_all`;
       const currentSectionPoints = profile!.sectionPoints?.[sectionKey] || 0;
       const newPoints = score;
       
       const updates: any = {
-        completedQuizzes: increment(1),
-        totalQuestionsAnswered: increment(questions.length),
-        totalCorrectAnswers: increment(score)
+        completed_quizzes: (profile!.completedQuizzes || 0) + 1,
+        total_questions_answered: (profile!.totalQuestionsAnswered || 0) + questions.length,
+        total_correct_answers: (profile!.totalCorrectAnswers || 0) + score
       };
 
       let pointsEarned = 0;
       if (newPoints > currentSectionPoints) {
         pointsEarned = newPoints - currentSectionPoints;
-        updates.points = increment(pointsEarned);
-        updates[`sectionPoints.${sectionKey}`] = newPoints;
+        updates.points = (profile!.points || 0) + pointsEarned;
+        updates.section_points = { ...(profile!.sectionPoints || {}), [sectionKey]: newPoints };
       }
 
-      await updateDoc(userRef, updates);
+      await supabase.from('users').update(updates).eq('uid', profile!.uid);
 
       navigate(`/result/${resultId}`, { state: { result: resultData, questions, selectedAnswers, pointsEarned } });
     } catch (err) {
@@ -183,52 +191,54 @@ export default function Quiz() {
       if (!subjectId) return;
       
       try {
-        // Fetch subject
         let currentSubject: Subject | null = null;
         
-        // First try fetching by document ID
-        const subjectRef = doc(db, 'subjects', subjectId);
-        const subjectSnap = await getDoc(subjectRef);
+        const { data: subjectData } = await supabase.from('subjects').select('*').eq('id', subjectId).single();
         
-        if (subjectSnap.exists()) {
-          currentSubject = { ...subjectSnap.data(), id: subjectSnap.id } as Subject;
-        } else {
-          // Fallback to querying by 'id' field if it exists
-          const subjectQuery = await getDocs(query(collection(db, 'subjects'), where('id', '==', subjectId)));
-          if (!subjectQuery.empty) {
-            currentSubject = { ...subjectQuery.docs[0].data(), id: subjectQuery.docs[0].id } as Subject;
-          }
+        if (subjectData) {
+          currentSubject = {
+            id: subjectData.id,
+            nameAr: subjectData.name_ar,
+            nameEn: subjectData.name_en,
+            icon: subjectData.icon,
+            isLocked: subjectData.is_locked
+          } as Subject;
         }
         
         if (currentSubject) {
           setSubject(currentSubject);
           
-          // Fetch sections
-          const sectionsSnap = await getDocs(query(collection(db, 'sections'), where('subjectId', '==', currentSubject.id)));
-          const sectionsList = sectionsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Section));
+          const { data: sectionsData } = await supabase.from('sections').select('*').eq('subject_id', currentSubject.id);
+          const sectionsList = (sectionsData || []).map(doc => ({
+            id: doc.id,
+            subjectId: doc.subject_id,
+            parentId: doc.parent_id,
+            nameAr: doc.name_ar,
+            nameEn: doc.name_en,
+            order: doc.order
+          } as Section));
           setSections(sectionsList);
 
-          // Fetch question counts for each section
           const counts: Record<string, number> = {};
           
-          // Count for "All Sections"
-          const allCountSnap = await getCountFromServer(query(collection(db, 'questions'), where('subjectId', '==', currentSubject.id)));
-          counts['all'] = allCountSnap.data().count;
+          const { count: allCount } = await supabase.from('questions').select('*', { count: 'exact', head: true }).eq('subject_id', currentSubject.id);
+          counts['all'] = allCount || 0;
           
-          // Count for each specific section
           await Promise.all(sectionsList.map(async (section) => {
-            const sectionCountSnap = await getCountFromServer(query(collection(db, 'questions'), where('sectionId', '==', section.id)));
-            counts[section.id] = sectionCountSnap.data().count;
+            const { count: sectionCount } = await supabase.from('questions').select('*', { count: 'exact', head: true }).eq('section_id', section.id);
+            counts[section.id] = sectionCount || 0;
           }));
           setSectionQuestionCounts(counts);
 
-          // Calculate mistakes count
           if (profile?.uid) {
-            const resultsSnap = await getDocs(query(collection(db, 'quizResults'), where('userId', '==', profile.uid), where('subjectId', '==', subjectId)));
+            const { data: resultsData } = await supabase.from('quiz_results').select('*').eq('user_id', profile.uid).eq('subject_id', subjectId);
             const mistakes = new Set<string>();
-            resultsSnap.docs.forEach(doc => {
-              const result = doc.data() as QuizResult;
-              result.questions.forEach((q, idx) => {
+            (resultsData || []).forEach(doc => {
+              const result = {
+                questions: doc.questions,
+                selectedAnswers: doc.selected_answers
+              } as any;
+              result.questions.forEach((q: any, idx: number) => {
                 if (result.selectedAnswers[idx] !== q.correctAnswer) {
                   mistakes.add(q.id);
                 }
@@ -244,7 +254,6 @@ export default function Quiz() {
           }
         }
 
-        // Check for saved progress if no sections
         if (subjectId) {
           const progressKey = `quiz_progress_${subjectId}_all`;
           const savedStr = localStorage.getItem(progressKey);
@@ -277,12 +286,28 @@ export default function Quiz() {
     try {
       let qList: Question[] = [];
       
+      const mapQuestion = (doc: any): Question => ({
+        id: doc.id,
+        subjectId: doc.subject_id,
+        sectionId: doc.section_id,
+        title: doc.title,
+        imageUrl: doc.image_url,
+        options: doc.options,
+        correctAnswer: doc.correct_answer,
+        explanation: doc.explanation,
+        difficulty: doc.difficulty,
+        order: doc.order
+      });
+
       if (sectionId === 'mistakes') {
-        const resultsSnap = await getDocs(query(collection(db, 'quizResults'), where('userId', '==', profile!.uid), where('subjectId', '==', sId)));
+        const { data: resultsData } = await supabase.from('quiz_results').select('*').eq('user_id', profile!.uid).eq('subject_id', sId);
         const mistakeIds = new Set<string>();
-        resultsSnap.docs.forEach(doc => {
-          const result = doc.data() as QuizResult;
-          result.questions.forEach((q, idx) => {
+        (resultsData || []).forEach(doc => {
+          const result = {
+            questions: doc.questions,
+            selectedAnswers: doc.selected_answers
+          } as any;
+          result.questions.forEach((q: any, idx: number) => {
             if (result.selectedAnswers[idx] !== q.correctAnswer) {
               mistakeIds.add(q.id);
             }
@@ -290,63 +315,36 @@ export default function Quiz() {
         });
 
         if (mistakeIds.size > 0) {
-          const qSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', sId)));
-          let allQList = qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
-          if (allQList.length === 0 && firestoreId) {
-            const qSnapFirestore = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', firestoreId)));
-            allQList = qSnapFirestore.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
-          }
+          const { data: qData } = await supabase.from('questions').select('*').eq('subject_id', sId);
+          let allQList = (qData || []).map(mapQuestion);
           qList = allQList.filter(q => mistakeIds.has(q.id));
         }
       } else if (sectionId) {
-        // Find if this section has sub-sections
         const subSections = sections.filter(s => s.parentId === sectionId);
         if (subSections.length > 0) {
-          // It's a parent section, fetch questions for parent and all sub-sections
           const sectionIds = [sectionId, ...subSections.map(s => s.id)];
-          
-          // Fetch all subject questions and filter (safer than 'in' query if > 10 subsections)
-          const qSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', sId)));
-          let allQList = qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
-          
-          if (allQList.length === 0 && firestoreId) {
-            const qSnapFirestore = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', firestoreId)));
-            allQList = qSnapFirestore.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
-          }
-          
+          const { data: qData } = await supabase.from('questions').select('*').eq('subject_id', sId);
+          let allQList = (qData || []).map(mapQuestion);
           qList = allQList.filter(q => sectionIds.includes(q.sectionId || ''));
         } else {
-          const qSnap = await getDocs(query(collection(db, 'questions'), where('sectionId', '==', sectionId)));
-          qList = qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
+          const { data: qData } = await supabase.from('questions').select('*').eq('section_id', sectionId);
+          qList = (qData || []).map(mapQuestion);
         }
       } else {
-        // Fetch questions - try both manual ID and Firestore ID for subjectId
-        const qSnapManual = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', sId)));
-        qList = qSnapManual.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
-        
-        // If no questions found, it might be because subjectId in questions is the Firestore ID
-        if (qList.length === 0 && firestoreId) {
-           const qSnapFirestore = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', firestoreId)));
-           qList = qSnapFirestore.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
-        }
+        const { data: qData } = await supabase.from('questions').select('*').eq('subject_id', sId);
+        qList = (qData || []).map(mapQuestion);
       }
       
-      // Shuffle questions
       const shuffled = qList.sort(() => Math.random() - 0.5);
       setQuestions(shuffled);
       
-      // Set timer (1 minute per question)
       setTimeLeft(shuffled.length * 60);
       setLoading(false);
       setShowSectionSelection(false);
     } catch (err: any) {
       try {
-        handleFirestoreError(err, OperationType.GET, 'questions');
+        handleSupabaseError(err, OperationType.GET, 'questions');
       } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage('Permission denied. The system is diagnosing the issue.');
-          throw firestoreErr;
-        }
         setMessage(firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.');
       } finally {
         setLoading(false);
@@ -404,29 +402,32 @@ export default function Quiz() {
     fetchQuestions(subjectId!, subject?.id, pendingSectionId);
   };
 
-  // Debounced save to Firestore
+  // Save progress logic
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const latestProgressRef = useRef<any>(null);
 
   useEffect(() => {
     if (!subjectId || questions.length === 0 || isFinished || loading || showResumeModal || !quizStarted) return;
     
+    const currentSectionId = selectedSectionId || 'all';
+    const progressKey = `quiz_progress_${subjectId}_${currentSectionId}`;
+    const progress = {
+      currentIdx,
+      selectedAnswers,
+      timeLeft,
+      flaggedQuestions: Array.from(flaggedQuestions),
+      visitedQuestions: Array.from(visitedQuestions),
+      questions,
+      feedbackMode,
+      sectionId: currentSectionId,
+      timestamp: new Date().getTime()
+    };
+    
+    latestProgressRef.current = { key: progressKey, data: progress };
+
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(() => {
-      const currentSectionId = selectedSectionId || 'all';
-      const progressKey = `quiz_progress_${subjectId}_${currentSectionId}`;
-      const progress = {
-        currentIdx,
-        selectedAnswers,
-        timeLeft,
-        flaggedQuestions: Array.from(flaggedQuestions),
-        visitedQuestions: Array.from(visitedQuestions),
-        questions,
-        feedbackMode,
-        sectionId: currentSectionId,
-        timestamp: new Date().getTime()
-      };
-      
       try {
         localStorage.setItem(progressKey, JSON.stringify(progress));
       } catch (err) {
@@ -439,24 +440,60 @@ export default function Quiz() {
     };
   }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, feedbackMode, quizStarted]);
 
+  // Save on exit / tab close
   useEffect(() => {
-    if (timeLeft > 0 && !isFinished && !loading && quizStarted) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            handleSubmit();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (latestProgressRef.current && !isFinished) {
+        try {
+          localStorage.setItem(latestProgressRef.current.key, JSON.stringify(latestProgressRef.current.data));
+        } catch (err) {
+          console.error("Error saving progress on exit:", err);
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && latestProgressRef.current && !isFinished) {
+        try {
+          localStorage.setItem(latestProgressRef.current.key, JSON.stringify(latestProgressRef.current.data));
+        } catch (err) {
+          console.error("Error saving progress on visibility change:", err);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isFinished]);
+
+  const handleSubmitRef = useRef(handleSubmit);
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  }, [handleSubmit]);
+
+  useEffect(() => {
+    if (isFinished || loading || !quizStarted) return;
+    
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!);
+          handleSubmitRef.current();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [timeLeft, isFinished, loading, quizStarted, handleSubmit]);
+  }, [isFinished, loading, quizStarted]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -769,6 +806,34 @@ export default function Quiz() {
                   <Clock size={20} className={timeLeft < 60 ? "animate-bounce" : ""} />
                   {formatTime(timeLeft)}
                 </div>
+                <button
+                  onClick={() => {
+                    // Force a save right now
+                    const currentSectionId = selectedSectionId || 'all';
+                    const progressKey = `quiz_progress_${subjectId}_${currentSectionId}`;
+                    const progress = {
+                      currentIdx,
+                      selectedAnswers,
+                      timeLeft,
+                      flaggedQuestions: Array.from(flaggedQuestions),
+                      visitedQuestions: Array.from(visitedQuestions),
+                      questions,
+                      feedbackMode,
+                      sectionId: currentSectionId,
+                      timestamp: new Date().getTime()
+                    };
+                    try {
+                      localStorage.setItem(progressKey, JSON.stringify(progress));
+                    } catch (err) {
+                      console.error("Error saving progress to localStorage:", err);
+                    }
+                    navigate('/dashboard');
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-colors"
+                >
+                  <ArrowLeft size={18} />
+                  <span className="hidden sm:inline">Save & Exit</span>
+                </button>
               </div>
             </div>
 

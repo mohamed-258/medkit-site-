@@ -196,7 +196,7 @@ export default function ManageUsers() {
                         />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-teal-700 dark:text-teal-400 font-bold border border-teal-200 dark:border-teal-800">
-                          {user.name.charAt(0)}
+                          {(user.name || user.email || 'U').charAt(0).toUpperCase()}
                         </div>
                       )}
                       <div>

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { collection, query, orderBy, limit, getDocs, where, getCountFromServer } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabase';
 import { useAuth } from '../App';
 import { Subject, UserProfile, QuizResult } from '../types';
 import { 
@@ -37,15 +36,27 @@ export default function Dashboard() {
 
     const fetchSubjects = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'subjects'));
-        const subjectsData = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Subject));
+        const { data, error } = await supabase.from('subjects').select('*');
+        if (error) throw error;
+        
+        const subjectsData = data.map(doc => ({ 
+          id: doc.id,
+          nameAr: doc.name_ar,
+          nameEn: doc.name_en,
+          icon: doc.icon,
+          isLocked: doc.is_locked
+        } as Subject));
         setSubjects(subjectsData);
         
         const counts: Record<string, number> = {};
         await Promise.all(subjectsData.map(async (subject) => {
-          const q = query(collection(db, 'questions'), where('subjectId', '==', subject.id));
-          const countSnap = await getCountFromServer(q);
-          counts[subject.id] = countSnap.data().count;
+          const { count, error: countError } = await supabase
+            .from('questions')
+            .select('*', { count: 'exact', head: true })
+            .eq('subject_id', subject.id);
+          if (!countError) {
+            counts[subject.id] = count || 0;
+          }
         }));
         setSubjectQuestionCounts(counts);
       } catch (error) {
@@ -55,14 +66,26 @@ export default function Dashboard() {
 
     const fetchRecentResults = async () => {
       try {
-        const q = query(
-          collection(db, 'quizResults'),
-          where('userId', '==', profile.uid),
-          orderBy('timestamp', 'desc'),
-          limit(5)
-        );
-        const snapshot = await getDocs(q);
-        const results = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as QuizResult));
+        const { data, error } = await supabase
+          .from('quiz_results')
+          .select('*')
+          .eq('user_id', profile.uid)
+          .order('timestamp', { ascending: false })
+          .limit(5);
+          
+        if (error) throw error;
+        
+        const results = data.map(doc => ({
+          id: doc.id,
+          userId: doc.user_id,
+          subjectId: doc.subject_id,
+          sectionId: doc.section_id,
+          score: doc.score,
+          totalQuestions: doc.total_questions,
+          timestamp: doc.timestamp,
+          questions: doc.questions,
+          selectedAnswers: doc.selected_answers
+        } as QuizResult));
         setRecentResults(results);
       } catch (error) {
         console.error("Error fetching recent results:", error);

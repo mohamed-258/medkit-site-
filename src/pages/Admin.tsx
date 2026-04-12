@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { collection, addDoc, deleteDoc, doc, updateDoc, query, where, getDocs, writeBatch, setDoc, getDoc, increment, getCountFromServer, limit, orderBy } from 'firebase/firestore';
-import { db, auth } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
+import { useAuth } from '../App';
+import { supabase } from '../supabase';
+import { handleSupabaseError, OperationType } from '../lib/supabase-errors';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
-import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2, MonitorSmartphone } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2, MonitorSmartphone, Image as ImageIcon } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -37,6 +37,8 @@ const QuizBuilder = lazy(() => import('../components/admin/QuizBuilder'));
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { db } from '../firebase';
+import { collection, getDocs } from 'firebase/firestore';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -157,6 +159,7 @@ function SortableSubSection({ sub, subQuestions, onEdit, onDelete }: { sub: Sect
 }
 
 export default function Admin() {
+  const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'analytics'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
@@ -223,14 +226,11 @@ export default function Admin() {
           });
           setSections(newSections);
 
-          // Update in Firestore
+          // Update in Supabase
           try {
-            const batch = writeBatch(db);
-            newSubSections.forEach((sub, index) => {
-              const docRef = doc(db, 'sections', sub.id);
-              batch.update(docRef, { order: index });
-            });
-            await batch.commit();
+            await Promise.all(newSubSections.map((sub, index) => 
+              supabase.from('sections').update({ order: index }).eq('id', sub.id)
+            ));
           } catch (error) {
             console.error("Error updating order:", error);
             setMessage({ text: "Failed to save new order", type: "error" });
@@ -504,7 +504,7 @@ export default function Admin() {
       const chunk = chunks[i];
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-3.1-pro",
           contents: `
             Extract ALL multiple-choice questions from the following text. 
             
@@ -598,39 +598,40 @@ export default function Admin() {
         throw new Error('No valid questions found in the file.');
       }
 
-      // Commit in chunks of 500 (Firestore batch limit)
+      // Commit in chunks of 500
       const chunkSize = 500;
       for (let i = 0; i < parsedQuestions.length; i += chunkSize) {
         const chunk = parsedQuestions.slice(i, i + chunkSize);
-        const batch = writeBatch(db);
         
-        chunk.forEach((q) => {
-          const docRef = doc(collection(db, 'questions'));
-          batch.set(docRef, {
-            ...q,
-            subjectId: selectedSubjectId,
-            sectionId: selectedSectionId || '',
-            id: docRef.id,
-            createdAt: new Date().toISOString()
-          });
-        });
+        const insertData = chunk.map((q) => ({
+          id: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
+          subject_id: selectedSubjectId,
+          section_id: selectedSectionId || null,
+          title: q.title,
+          options: q.options,
+          correct_answer: q.correctAnswer,
+          explanation: q.explanation,
+          difficulty: q.difficulty,
+          order: q.order,
+          created_at: new Date().toISOString()
+        }));
         
-        await batch.commit();
+        await supabase.from('questions').insert(insertData);
       }
 
       setMessage({ text: `Successfully added ${parsedQuestions.length} questions!`, type: 'success' });
     } catch (err: any) {
       if (err instanceof Error && (err.message === 'No valid questions found in the file.' || err.message.includes('File type not supported'))) {
         setMessage({ text: err.message, type: 'error' });
-      } else if (err?.name === 'FirebaseError' || err?.code?.includes('permission-denied') || err?.message?.includes('Missing or insufficient permissions')) {
+      } else if (err?.code?.includes('permission-denied') || err?.message?.includes('Missing or insufficient permissions') || err?.code === '42501') {
         try {
-          handleFirestoreError(err, OperationType.WRITE, 'questions');
-        } catch (firestoreErr: any) {
-          if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
+          handleSupabaseError(err, OperationType.WRITE, 'questions');
+        } catch (supabaseErr: any) {
+          if (supabaseErr instanceof Error && supabaseErr.message.includes('authInfo')) {
             setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-            throw firestoreErr; // Rethrow for the system to diagnose security rules
+            throw supabaseErr; // Rethrow for the system to diagnose security rules
           }
-          setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Failed to upload questions due to a database error.', type: 'error' });
+          setMessage({ text: supabaseErr instanceof Error ? supabaseErr.message : 'Failed to upload questions due to a database error.', type: 'error' });
         }
       } else {
         setMessage({ text: err instanceof Error ? err.message : 'An unexpected error occurred while processing the file.', type: 'error' });
@@ -645,14 +646,31 @@ export default function Admin() {
     setLoading(true);
     setMessage({ text: 'Recalculating user points...', type: 'success' });
     try {
-      const q = query(collection(db, 'quizResults'), where('userId', '==', userId));
-      const resultsSnap = await getDocs(q);
-      const userResults = resultsSnap.docs.map(d => d.data() as QuizResult);
+      const { data: resultsData } = await supabase.from('quiz_results').select('*').eq('user_id', userId);
+      const userResults = (resultsData || []).map(d => ({
+        id: d.id,
+        userId: d.user_id,
+        subjectId: d.subject_id,
+        sectionId: d.section_id,
+        score: d.score,
+        totalQuestions: d.total_questions,
+        timestamp: d.timestamp,
+        questions: d.questions,
+        selectedAnswers: d.selected_answers
+      } as QuizResult));
       
-      const userRef = doc(db, 'users', userId);
-      const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) throw new Error("User not found");
-      const user = userSnap.data() as UserProfile;
+      const { data: userData, error: userError } = await supabase.from('users').select('*').eq('uid', userId).single();
+      if (userError || !userData) throw new Error("User not found");
+      const user = {
+        uid: userData.uid,
+        email: userData.email,
+        role: userData.role,
+        points: userData.points,
+        sectionPoints: userData.section_points,
+        completedQuizzes: userData.completed_quizzes,
+        totalQuestionsAnswered: userData.total_questions_answered,
+        totalCorrectAnswers: userData.total_correct_answers
+      } as UserProfile;
 
       let totalPoints = 0;
       let totalQuestionsAnswered = 0;
@@ -681,13 +699,13 @@ export default function Admin() {
         JSON.stringify(user.sectionPoints || {}) !== JSON.stringify(sectionPoints);
 
       if (hasChanged) {
-        await updateDoc(userRef, {
+        await supabase.from('users').update({
           points: totalPoints,
-          sectionPoints: sectionPoints,
-          completedQuizzes: completedQuizzes,
-          totalQuestionsAnswered,
-          totalCorrectAnswers
-        });
+          section_points: sectionPoints,
+          completed_quizzes: completedQuizzes,
+          total_questions_answered: totalQuestionsAnswered,
+          total_correct_answers: totalCorrectAnswers
+        }).eq('uid', userId);
         
         // Update local state
         setUsers(users.map(u => u.uid === userId ? { ...u, points: totalPoints, sectionPoints, completedQuizzes, totalQuestionsAnswered, totalCorrectAnswers } : u));
@@ -728,17 +746,28 @@ export default function Admin() {
   useEffect(() => {
     const fetchSubjectsAndSections = async () => {
       try {
-        const [subSnap, secSnap] = await Promise.all([
-          getDocs(collection(db, 'subjects')),
-          getDocs(collection(db, 'sections'))
+        const [subRes, secRes] = await Promise.all([
+          supabase.from('subjects').select('*'),
+          supabase.from('sections').select('*')
         ]);
         
-        setSubjects(subSnap.docs.map(doc => {
-          const data = doc.data();
-          return { ...data, manualId: data.id, id: doc.id } as Subject & { manualId?: string };
-        }));
+        setSubjects((subRes.data || []).map(doc => ({
+          id: doc.id,
+          nameAr: doc.name_ar,
+          nameEn: doc.name_en,
+          icon: doc.icon,
+          isLocked: doc.is_locked,
+          manualId: doc.id
+        } as Subject & { manualId?: string })));
         
-        setSections(secSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Section)));
+        setSections((secRes.data || []).map(doc => ({
+          id: doc.id,
+          subjectId: doc.subject_id,
+          parentId: doc.parent_id,
+          nameAr: doc.name_ar,
+          nameEn: doc.name_en,
+          order: doc.order
+        } as Section)));
       } catch (err) {
         console.error("Error fetching initial admin data:", err);
       }
@@ -750,10 +779,10 @@ export default function Admin() {
       setLoading(true);
       try {
         // We only need counts for the initial view
-        const [qCount, uCount, rCount] = await Promise.all([
-          getCountFromServer(collection(db, 'questions')),
-          getCountFromServer(collection(db, 'users')),
-          getCountFromServer(collection(db, 'quizResults'))
+        await Promise.all([
+          supabase.from('questions').select('*', { count: 'exact', head: true }),
+          supabase.from('users').select('*', { count: 'exact', head: true }),
+          supabase.from('quiz_results').select('*', { count: 'exact', head: true })
         ]);
         // These are just for display if needed, but the actual data will be fetched per tab
         setLoading(false);
@@ -773,13 +802,37 @@ export default function Admin() {
     const fetchDataForTab = async () => {
       if (activeTab === 'questions' && questions.length === 0) {
         setLoading(true);
-        const qSnap = await getDocs(query(collection(db, 'questions'), limit(1000))); // Limit to 1000 for safety
-        setQuestions(qSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question)));
+        const { data: qData } = await supabase.from('questions').select('*').limit(1000);
+        setQuestions((qData || []).map(doc => ({
+          id: doc.id,
+          subjectId: doc.subject_id,
+          sectionId: doc.section_id,
+          title: doc.title,
+          imageUrl: doc.image_url,
+          options: doc.options,
+          correctAnswer: doc.correct_answer,
+          explanation: doc.explanation,
+          difficulty: doc.difficulty,
+          order: doc.order
+        } as Question)));
         setLoading(false);
       } else if (activeTab === 'users' && users.length === 0) {
         setLoading(true);
-        const uSnap = await getDocs(collection(db, 'users'));
-        setUsers(uSnap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+        const { data: uData } = await supabase.from('users').select('*');
+        setUsers((uData || []).map(doc => ({
+          uid: doc.uid,
+          email: doc.email,
+          role: doc.role,
+          points: doc.points,
+          sectionPoints: doc.section_points,
+          completedQuizzes: doc.completed_quizzes,
+          totalQuestionsAnswered: doc.total_questions_answered,
+          totalCorrectAnswers: doc.total_correct_answers,
+          createdAt: doc.created_at,
+          allowedSubjects: doc.allowed_subjects,
+          allowedDevices: doc.allowed_devices,
+          registeredDevices: doc.registered_devices
+        } as UserProfile)).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
         setLoading(false);
       }
     };
@@ -789,30 +842,21 @@ export default function Admin() {
   const toggleUserRole = async (user: UserProfile) => {
     try {
       if (user.email === 'mhsn68503@gmail.com') return; // Owner role cannot be toggled
-      const userRef = doc(db, 'users', user.uid);
       const newRole = user.role === 'admin' ? 'student' : 'admin';
-      await updateDoc(userRef, { role: newRole });
+      await supabase.from('users').update({ role: newRole }).eq('uid', user.uid);
       
       // Update local state
       setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, role: newRole } : u));
       
       setMessage({ text: `User role updated to ${newRole} successfully`, type: 'success' });
     } catch (error: any) {
-      try {
-        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(error);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
   const toggleSubjectAccess = async (user: UserProfile, subjectId: string) => {
     try {
-      const userRef = doc(db, 'users', user.uid);
       const allowedSubjects = user.allowedSubjects || [];
       const isAllowed = allowedSubjects.includes(subjectId);
 
@@ -820,66 +864,43 @@ export default function Admin() {
         ? allowedSubjects.filter(id => id !== subjectId)
         : [...allowedSubjects, subjectId];
 
-      await updateDoc(userRef, { allowedSubjects: newAllowedSubjects });
+      await supabase.from('users').update({ allowed_subjects: newAllowedSubjects }).eq('uid', user.uid);
       
       // Update local state
       setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, allowedSubjects: newAllowedSubjects } : u));
       
       setMessage({ text: 'Permissions updated successfully', type: 'success' });
     } catch (error: any) {
-      try {
-        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(error);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
   const updateAllowedDevices = async (user: UserProfile, count: number) => {
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, { allowedDevices: count });
+      await supabase.from('users').update({ allowed_devices: count }).eq('uid', user.uid);
       
       // Update local state
       setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, allowedDevices: count } : u));
       
       setMessage({ text: 'Allowed devices updated successfully', type: 'success' });
     } catch (error: any) {
-      try {
-        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(error);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
   const clearRegisteredDevices = async (user: UserProfile) => {
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, { registeredDevices: [] });
+      await supabase.from('users').update({ registered_devices: [] }).eq('uid', user.uid);
       
       // Update local state
       setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, registeredDevices: [] } : u));
       
       setMessage({ text: 'Registered devices cleared successfully', type: 'success' });
     } catch (error: any) {
-      try {
-        handleFirestoreError(error, OperationType.UPDATE, 'users/' + user.uid);
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(error);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
@@ -892,26 +913,48 @@ export default function Admin() {
     
     try {
       if (editingSubject) {
-        await updateDoc(doc(db, 'subjects', editingSubject.id), subjectForm);
+        const updatedSubject = {
+          ...editingSubject,
+          nameAr: subjectForm.nameAr,
+          nameEn: subjectForm.nameEn,
+          icon: subjectForm.icon || 'BookOpen',
+          isLocked: subjectForm.isLocked
+        };
+        await supabase.from('subjects').update({
+          name_ar: subjectForm.nameAr,
+          name_en: subjectForm.nameEn,
+          icon: subjectForm.icon,
+          is_locked: subjectForm.isLocked
+        }).eq('id', editingSubject.id);
+        
+        setSubjects(prev => prev.map(s => s.id === editingSubject.id ? updatedSubject : s));
         setMessage({ text: 'Subject updated successfully', type: 'success' });
       } else {
-        const docRef = doc(collection(db, 'subjects'));
-        await setDoc(docRef, { ...subjectForm, id: docRef.id });
+        const newId = Math.random().toString(36).substring(2, 15);
+        const newSubject = {
+          id: newId,
+          nameAr: subjectForm.nameAr,
+          nameEn: subjectForm.nameEn,
+          icon: subjectForm.icon || 'BookOpen',
+          isLocked: subjectForm.isLocked || false
+        };
+        await supabase.from('subjects').insert({
+          id: newId,
+          name_ar: subjectForm.nameAr,
+          name_en: subjectForm.nameEn,
+          icon: subjectForm.icon,
+          is_locked: subjectForm.isLocked || false
+        });
+        
+        setSubjects(prev => [...prev, newSubject]);
         setMessage({ text: 'Subject added successfully', type: 'success' });
       }
       setSubjectForm({ nameAr: '', nameEn: '', icon: 'BookOpen' });
       setEditingSubject(null);
       setShowSubjectForm(false);
     } catch (err: any) {
-      try {
-        handleFirestoreError(err, editingSubject ? OperationType.UPDATE : OperationType.CREATE, 'subjects');
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(err);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
@@ -924,11 +967,44 @@ export default function Admin() {
     
     try {
       if (editingSection) {
-        await updateDoc(doc(db, 'sections', editingSection.id), sectionForm);
+        const updatedSection = {
+          ...editingSection,
+          subjectId: sectionForm.subjectId!,
+          parentId: sectionForm.parentId,
+          nameAr: sectionForm.nameAr,
+          nameEn: sectionForm.nameEn,
+          order: sectionForm.order
+        };
+        await supabase.from('sections').update({
+          subject_id: sectionForm.subjectId,
+          parent_id: sectionForm.parentId || null,
+          name_ar: sectionForm.nameAr,
+          name_en: sectionForm.nameEn,
+          order: sectionForm.order
+        }).eq('id', editingSection.id);
+        
+        setSections(prev => prev.map(s => s.id === editingSection.id ? updatedSection : s));
         setMessage({ text: 'Section updated successfully', type: 'success' });
       } else {
-        const docRef = doc(collection(db, 'sections'));
-        await setDoc(docRef, { ...sectionForm, id: docRef.id });
+        const newId = Math.random().toString(36).substring(2, 15);
+        const newSection = {
+          id: newId,
+          subjectId: sectionForm.subjectId!,
+          parentId: sectionForm.parentId,
+          nameAr: sectionForm.nameAr,
+          nameEn: sectionForm.nameEn,
+          order: sectionForm.order || 0
+        };
+        await supabase.from('sections').insert({
+          id: newId,
+          subject_id: sectionForm.subjectId,
+          parent_id: sectionForm.parentId || null,
+          name_ar: sectionForm.nameAr,
+          name_en: sectionForm.nameEn,
+          order: sectionForm.order || 0
+        });
+        
+        setSections(prev => [...prev, newSection]);
         setMessage({ text: 'Section added successfully', type: 'success' });
       }
       setSectionForm({ subjectId: sectionForm.subjectId, nameAr: '', nameEn: '' });
@@ -936,7 +1012,7 @@ export default function Admin() {
       setShowSectionForm(false);
     } catch (err: any) {
       try {
-        handleFirestoreError(err, editingSection ? OperationType.UPDATE : OperationType.CREATE, 'sections');
+        handleSupabaseError(err, editingSection ? OperationType.UPDATE : OperationType.CREATE, 'sections');
       } catch (firestoreErr: any) {
         if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
           setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
@@ -956,12 +1032,25 @@ export default function Admin() {
 
     try {
       const { id: _, ...rest } = questionForm;
-      const sanitizedForm = Object.fromEntries(
+      const sanitizedForm: any = Object.fromEntries(
         Object.entries(rest).filter(([_, v]) => v !== undefined)
       );
 
+      // Map to snake_case for Supabase
+      const supabaseData: any = {
+        subject_id: sanitizedForm.subjectId,
+        section_id: sanitizedForm.sectionId || null,
+        title: sanitizedForm.title,
+        image_url: sanitizedForm.imageUrl || null,
+        options: sanitizedForm.options,
+        correct_answer: sanitizedForm.correctAnswer,
+        explanation: sanitizedForm.explanation,
+        difficulty: sanitizedForm.difficulty,
+        order: sanitizedForm.order || 0
+      };
+
       if (editingQuestion) {
-        await updateDoc(doc(db, 'questions', editingQuestion.id), sanitizedForm);
+        await supabase.from('questions').update(supabaseData).eq('id', editingQuestion.id);
         
         // Update local state
         setQuestions(prev => prev.map(q => q.id === editingQuestion.id ? { ...q, ...sanitizedForm } : q));
@@ -969,126 +1058,114 @@ export default function Admin() {
         setMessage({ text: 'Question updated. Updating past results...', type: 'success' });
         
         // 1. Fetch all quiz results for this subject
-        const resultsQuery = query(collection(db, 'quizResults'), where('subjectId', '==', questionForm.subjectId));
-        const resultsSnap = await getDocs(resultsQuery);
+        const { data: resultsData } = await supabase.from('quiz_results').select('*').eq('subject_id', questionForm.subjectId);
         
-        const affectedUserIds = new Set<string>();
-        let batch = writeBatch(db);
-        let batchCount = 0;
+        if (resultsData && resultsData.length > 0) {
+          const affectedUserIds = new Set<string>();
+          
+          for (const result of resultsData) {
+            if (!result.questions) continue;
 
-        for (const resultDoc of resultsSnap.docs) {
-          const resultData = resultDoc.data() as QuizResult;
-          if (!resultData.questions) continue;
-
-          let needsUpdate = false;
-          const updatedQuestions = resultData.questions.map(q => {
-            if (q.id === editingQuestion.id) {
-              needsUpdate = true;
-              return { ...q, ...sanitizedForm };
-            }
-            return q;
-          });
-
-          if (needsUpdate) {
-            // Recalculate score
-            let newScore = 0;
-            updatedQuestions.forEach((q, idx) => {
-              if (resultData.selectedAnswers && resultData.selectedAnswers[idx] === q.correctAnswer) {
-                newScore++;
+            let needsUpdate = false;
+            const updatedQuestions = result.questions.map((q: any) => {
+              if (q.id === editingQuestion.id) {
+                needsUpdate = true;
+                return { ...q, ...sanitizedForm };
               }
+              return q;
             });
 
-            batch.update(resultDoc.ref, {
-              questions: updatedQuestions,
-              score: newScore
-            });
-            batchCount++;
-            affectedUserIds.add(resultData.userId);
+            if (needsUpdate) {
+              // Recalculate score
+              let newScore = 0;
+              updatedQuestions.forEach((q: any, idx: number) => {
+                if (result.selected_answers && result.selected_answers[idx] === q.correctAnswer) {
+                  newScore++;
+                }
+              });
 
-            if (batchCount % 400 === 0) {
-              await batch.commit();
-              batch = writeBatch(db);
+              await supabase.from('quiz_results').update({
+                questions: updatedQuestions,
+                score: newScore
+              }).eq('id', result.id);
+              
+              affectedUserIds.add(result.user_id);
             }
           }
-        }
 
-        if (batchCount % 400 !== 0) {
-          await batch.commit();
-        }
+          // 2. Recalculate points for affected users
+          if (affectedUserIds.size > 0) {
+            setMessage({ text: `Updating points for ${affectedUserIds.size} users...`, type: 'success' });
+            const updatedUsersList = [...users];
 
-        // 2. Recalculate points for affected users
-        if (affectedUserIds.size > 0) {
-          setMessage({ text: `Updating points for ${affectedUserIds.size} users...`, type: 'success' });
-          let userBatch = writeBatch(db);
-          let userBatchCount = 0;
-          
-          const updatedUsersList = [...users]; // To update local state
+            for (const userId of Array.from(affectedUserIds)) {
+               const { data: userResultsData } = await supabase.from('quiz_results').select('*').eq('user_id', userId);
+               const userResults = (userResultsData || []).map(d => ({
+                 id: d.id,
+                 userId: d.user_id,
+                 subjectId: d.subject_id,
+                 sectionId: d.section_id,
+                 score: d.score,
+                 totalQuestions: d.total_questions,
+                 timestamp: d.timestamp,
+                 questions: d.questions,
+                 selectedAnswers: d.selected_answers
+               } as QuizResult));
+               
+               let totalPoints = 0;
+               let totalQuestionsAnswered = 0;
+               let totalCorrectAnswers = 0;
+               let sectionPoints: Record<string, number> = {};
+               let completedQuizzes = userResults.length;
 
-          for (const userId of Array.from(affectedUserIds)) {
-             const userResultsQuery = query(collection(db, 'quizResults'), where('userId', '==', userId));
-             const userResultsSnap = await getDocs(userResultsQuery);
-             const userResults = userResultsSnap.docs.map(d => d.data() as QuizResult);
-             
-             let totalPoints = 0;
-             let totalQuestionsAnswered = 0;
-             let totalCorrectAnswers = 0;
-             let sectionPoints: Record<string, number> = {};
-             let completedQuizzes = userResults.length;
-
-             if (userResults.length > 0) {
-               userResults.forEach(r => {
-                 const sectionKey = r.sectionId || `${r.subjectId}_all`;
-                 const points = (r.score || 0);
-                 totalQuestionsAnswered += (r.totalQuestions || 0);
-                 totalCorrectAnswers += points;
-                 if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
-                   sectionPoints[sectionKey] = points;
-                 }
-               });
-               totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
-             }
-             
-             const userRef = doc(db, 'users', userId);
-             userBatch.update(userRef, {
-               points: totalPoints,
-               sectionPoints: sectionPoints,
-               completedQuizzes: completedQuizzes,
-               totalQuestionsAnswered,
-               totalCorrectAnswers
-             });
-             userBatchCount++;
-             
-             // Update local state array
-             const userIndex = updatedUsersList.findIndex(u => u.uid === userId);
-             if (userIndex !== -1) {
-               updatedUsersList[userIndex] = {
-                 ...updatedUsersList[userIndex],
+               if (userResults.length > 0) {
+                 userResults.forEach(r => {
+                   const sectionKey = r.sectionId || `${r.subjectId}_all`;
+                   const points = (r.score || 0);
+                   totalQuestionsAnswered += (r.totalQuestions || 0);
+                   totalCorrectAnswers += points;
+                   if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
+                     sectionPoints[sectionKey] = points;
+                   }
+                 });
+                 totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
+               }
+               
+               await supabase.from('users').update({
                  points: totalPoints,
-                 sectionPoints,
-                 completedQuizzes,
-                 totalQuestionsAnswered,
-                 totalCorrectAnswers
-               };
-             }
-
-             if (userBatchCount % 400 === 0) {
-               await userBatch.commit();
-               userBatch = writeBatch(db);
-             }
+                 section_points: sectionPoints,
+                 completed_quizzes: completedQuizzes,
+                 total_questions_answered: totalQuestionsAnswered,
+                 total_correct_answers: totalCorrectAnswers
+               }).eq('uid', userId);
+               
+               // Update local state array
+               const userIndex = updatedUsersList.findIndex(u => u.uid === userId);
+               if (userIndex !== -1) {
+                 updatedUsersList[userIndex] = {
+                   ...updatedUsersList[userIndex],
+                   points: totalPoints,
+                   sectionPoints,
+                   completedQuizzes,
+                   totalQuestionsAnswered,
+                   totalCorrectAnswers
+                 };
+               }
+            }
+            setUsers(updatedUsersList);
           }
-          
-          if (userBatchCount % 400 !== 0) {
-            await userBatch.commit();
-          }
-          
-          setUsers(updatedUsersList);
         }
 
         setMessage({ text: 'Question and past results updated successfully', type: 'success' });
       } else {
-        const docRef = doc(collection(db, 'questions'));
-        const newQuestion = { ...sanitizedForm, id: docRef.id, createdAt: new Date().toISOString() } as any as Question;
-        await setDoc(docRef, newQuestion);
+        const newId = Math.random().toString(36).substring(2, 15);
+        const newQuestion = { ...sanitizedForm, id: newId, createdAt: new Date().toISOString() } as any as Question;
+        
+        await supabase.from('questions').insert({
+          id: newId,
+          ...supabaseData,
+          created_at: newQuestion.createdAt
+        });
         
         // Update local state
         setQuestions(prev => [newQuestion, ...prev]);
@@ -1107,48 +1184,16 @@ export default function Admin() {
       setEditingQuestion(null);
       setShowQuestionForm(false);
     } catch (err: any) {
-      try {
-        handleFirestoreError(err, editingQuestion ? OperationType.UPDATE : OperationType.CREATE, 'questions');
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(err);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
   const handleDelete = async (coll: string, id: string) => {
-    if (!confirm('Are you sure you want to delete? This will also delete all associated sections and questions.')) return;
+    // Confirmation removed for iframe compatibility
     try {
-      const batch = writeBatch(db);
-      
-      // Delete the main document
-      batch.delete(doc(db, coll, id));
-
-      // If deleting subject, delete associated sections and questions
-      if (coll === 'subjects') {
-        // Delete sections
-        const sSnap = await getDocs(query(collection(db, 'sections'), where('subjectId', '==', id)));
-        sSnap.docs.forEach(sDoc => {
-          batch.delete(sDoc.ref);
-        });
-        // Delete questions
-        const qSnap = await getDocs(query(collection(db, 'questions'), where('subjectId', '==', id)));
-        qSnap.docs.forEach(qDoc => {
-          batch.delete(qDoc.ref);
-        });
-      }
-      // If deleting section, delete associated questions
-      else if (coll === 'sections') {
-        const qSnap = await getDocs(query(collection(db, 'questions'), where('sectionId', '==', id)));
-        qSnap.docs.forEach(qDoc => {
-          batch.delete(qDoc.ref);
-        });
-      }
-
-      await batch.commit();
+      const table = coll === 'quizResults' ? 'quiz_results' : coll;
+      await supabase.from(table).delete().eq('id', id);
       
       // Update local state
       if (coll === 'subjects') {
@@ -1164,84 +1209,58 @@ export default function Admin() {
       
       setMessage({ text: 'Deleted successfully along with associated content', type: 'success' });
     } catch (err: any) {
-      try {
-        handleFirestoreError(err, OperationType.DELETE, coll);
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(err);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
   const handleDeleteQuizResult = async (result: QuizResult) => {
-    if (!confirm('Are you sure you want to delete this quiz result? This will also remove the points from the user.')) return;
+    // Confirmation removed for iframe compatibility
     try {
-      const userRef = doc(db, 'users', result.userId);
-      const userDoc = await getDoc(userRef);
-      if (userDoc.exists()) {
-        const userData = userDoc.data() as UserProfile;
-        const pointsToSubtract = result.score; // Assuming 1 point per correct answer as per Quiz.tsx logic
+      const { data: userData, error: userError } = await supabase.from('users').select('*').eq('uid', result.userId).single();
+      
+      if (userData) {
+        const pointsToSubtract = result.score;
         
         const newPoints = Math.max(0, (userData.points || 0) - pointsToSubtract);
-        const newCompletedQuizzes = Math.max(0, (userData.completedQuizzes || 0) - 1);
+        const newCompletedQuizzes = Math.max(0, (userData.completed_quizzes || 0) - 1);
         
-        const sectionPoints = userData.sectionPoints || {};
+        const sectionPoints = userData.section_points || {};
         const sectionKey = `${result.subjectId}_${result.sectionId || 'all'}`;
         const newSectionPoints = Math.max(0, (sectionPoints[sectionKey] || 0) - pointsToSubtract);
         
-        await updateDoc(userRef, {
+        await supabase.from('users').update({
           points: newPoints,
-          completedQuizzes: newCompletedQuizzes,
-          sectionPoints: { ...sectionPoints, [sectionKey]: newSectionPoints }
-        });
+          completed_quizzes: newCompletedQuizzes,
+          section_points: { ...sectionPoints, [sectionKey]: newSectionPoints }
+        }).eq('uid', result.userId);
       }
       
-      await deleteDoc(doc(db, 'quizResults', result.id));
+      await supabase.from('quiz_results').delete().eq('id', result.id);
       setMessage({ text: 'Quiz result deleted and points updated successfully', type: 'success' });
     } catch (err: any) {
-      try {
-        handleFirestoreError(err, OperationType.DELETE, 'quizResults');
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(err);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
   const toggleLock = async (subject: Subject) => {
     try {
-      await updateDoc(doc(db, 'subjects', subject.id), { isLocked: !subject.isLocked });
+      await supabase.from('subjects').update({ is_locked: !subject.isLocked }).eq('id', subject.id);
       setMessage({ text: `Subject ${!subject.isLocked ? 'locked' : 'unlocked'} successfully`, type: 'success' });
     } catch (err: any) {
-      try {
-        handleFirestoreError(err, OperationType.UPDATE, 'subjects');
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(err);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     }
   };
 
   const handleBulkDelete = async () => {
     if (selectedQuestionIds.size === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedQuestionIds.size} questions?`)) return;
-
+    // Confirmation removed for iframe compatibility
     setIsDeletingBulk(true);
     try {
-      const batch = writeBatch(db);
-      selectedQuestionIds.forEach(id => {
-        batch.delete(doc(db, 'questions', id));
-      });
-      await batch.commit();
+      const idsToDelete = Array.from(selectedQuestionIds);
+      await supabase.from('questions').delete().in('id', idsToDelete);
       
       // Update local state
       setQuestions(prev => prev.filter(q => !selectedQuestionIds.has(q.id)));
@@ -1249,17 +1268,94 @@ export default function Admin() {
       setSelectedQuestionIds(new Set());
       setMessage({ text: 'Selected questions deleted successfully', type: 'success' });
     } catch (err: any) {
-      try {
-        handleFirestoreError(err, OperationType.DELETE, 'questions');
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(err);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     } finally {
       setIsDeletingBulk(false);
+    }
+  };
+
+  const handleMigrateFirebaseData = async () => {
+    setMessage({ text: 'Starting migration from Firebase...', type: 'success' });
+    try {
+      // 1. Migrate Users
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const firebaseUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      if (firebaseUsers.length > 0) {
+        const usersToInsert = firebaseUsers.map((u: any) => ({
+          uid: u.id,
+          email: u.email || '',
+          display_name: u.displayName || '',
+          first_name: u.firstName || null,
+          father_name: u.fatherName || null,
+          date_of_birth: u.dateOfBirth || null,
+          role: u.role || 'student',
+          points: u.points || 0,
+          completed_quizzes: u.completedQuizzes || 0,
+          total_questions_answered: u.totalQuestionsAnswered || 0,
+          total_correct_answers: u.totalCorrectAnswers || 0,
+          section_points: u.sectionPoints || {},
+          allowed_subjects: u.allowedSubjects || [],
+          allowed_devices: u.allowedDevices || 2,
+          registered_devices: u.registeredDevices || [],
+          created_at: u.createdAt || new Date().toISOString()
+        }));
+
+        // Upsert users to avoid duplicates
+        const { error: usersError } = await supabase.from('users').upsert(usersToInsert, { onConflict: 'uid' });
+        if (usersError) throw usersError;
+      }
+
+      // 2. Migrate Quiz Results
+      const resultsSnapshot = await getDocs(collection(db, 'quizResults'));
+      const firebaseResults = resultsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      if (firebaseResults.length > 0) {
+        const resultsToInsert = firebaseResults.map((r: any) => ({
+          id: r.id,
+          user_id: r.userId,
+          subject_id: r.subjectId,
+          section_id: r.sectionId || null,
+          score: r.score || 0,
+          total_questions: r.totalQuestions || 0,
+          timestamp: r.timestamp || new Date().toISOString(),
+          questions: r.questions || [],
+          selected_answers: r.selectedAnswers || {}
+        }));
+
+        // Upsert results
+        const { error: resultsError } = await supabase.from('quiz_results').upsert(resultsToInsert, { onConflict: 'id' });
+        if (resultsError) throw resultsError;
+      }
+
+      setMessage({ text: `Successfully migrated ${firebaseUsers.length} users and ${firebaseResults.length} quiz results from Firebase!`, type: 'success' });
+      
+      // Refresh user list
+      const { data: updatedUsers } = await supabase.from('users').select('*');
+      if (updatedUsers) {
+        setUsers(updatedUsers.map(u => ({
+          uid: u.uid,
+          email: u.email,
+          displayName: u.display_name,
+          firstName: u.first_name,
+          fatherName: u.father_name,
+          dateOfBirth: u.date_of_birth,
+          role: u.role,
+          points: u.points,
+          completedQuizzes: u.completed_quizzes,
+          totalQuestionsAnswered: u.total_questions_answered,
+          totalCorrectAnswers: u.total_correct_answers,
+          sectionPoints: u.section_points,
+          allowedSubjects: u.allowed_subjects,
+          allowedDevices: u.allowed_devices,
+          registeredDevices: u.registered_devices,
+          createdAt: u.created_at
+        })));
+      }
+    } catch (err: any) {
+      console.error("Migration error:", err);
+      setMessage({ text: `Migration failed: ${err.message}`, type: 'error' });
     }
   };
 
@@ -1268,28 +1364,19 @@ export default function Admin() {
     
     setIsDeletingBulk(true);
     try {
-      const batch = writeBatch(db);
-      const newSectionIdValue = sectionId === 'none' ? '' : sectionId;
-      selectedQuestionIds.forEach(id => {
-        batch.update(doc(db, 'questions', id), { sectionId: newSectionIdValue });
-      });
-      await batch.commit();
+      const idsToUpdate = Array.from(selectedQuestionIds);
+      const newSectionIdValue = sectionId === 'none' ? null : sectionId;
+      
+      await supabase.from('questions').update({ section_id: newSectionIdValue }).in('id', idsToUpdate);
       
       // Update local state
-      setQuestions(prev => prev.map(q => selectedQuestionIds.has(q.id) ? { ...q, sectionId: newSectionIdValue } : q));
+      setQuestions(prev => prev.map(q => selectedQuestionIds.has(q.id) ? { ...q, sectionId: newSectionIdValue || '' } : q));
       
       setSelectedQuestionIds(new Set());
       setMessage({ text: `Successfully moved ${selectedQuestionIds.size} questions`, type: 'success' });
     } catch (err: any) {
-      try {
-        handleFirestoreError(err, OperationType.UPDATE, 'questions');
-      } catch (firestoreErr: any) {
-        if (firestoreErr instanceof Error && firestoreErr.message.includes('authInfo')) {
-          setMessage({ text: 'Permission denied. The system is diagnosing the issue.', type: 'error' });
-          throw firestoreErr;
-        }
-        setMessage({ text: firestoreErr instanceof Error ? firestoreErr.message : 'Database error occurred.', type: 'error' });
-      }
+      console.error(err);
+      setMessage({ text: 'Database error occurred.', type: 'error' });
     } finally {
       setIsDeletingBulk(false);
     }
@@ -1354,14 +1441,14 @@ export default function Admin() {
         <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3 px-3">
             <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/20">
-              {auth.currentUser?.displayName?.charAt(0) || 'A'}
+              {profile?.email?.charAt(0).toUpperCase() || 'A'}
             </div>
             <div className="hidden sm:block">
-              <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{auth.currentUser?.displayName || 'Admin'}</p>
+              <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{profile?.email?.split('@')[0] || 'Admin'}</p>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Super Admin</p>
                 <div className="w-1 h-1 rounded-full bg-slate-300" />
-                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">{users.find(u => u.uid === auth.currentUser?.uid)?.points || 0} Points</p>
+                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">{profile?.points || 0} Points</p>
               </div>
             </div>
           </div>
@@ -1623,16 +1710,27 @@ export default function Admin() {
           </div>
         </section>
       ) : activeTab === 'users' ? (
-        <ManageUsersPanel
-          users={users}
-          subjects={subjects}
-          loading={loading}
-          onToggleRole={toggleUserRole}
-          onToggleSubjectAccess={toggleSubjectAccess}
-          onUpdateAllowedDevices={updateAllowedDevices}
-          onClearDevices={clearRegisteredDevices}
-          onRefreshPoints={refreshUserPoints}
-        />
+        <div className="space-y-6">
+          <div className="flex justify-end">
+            <button
+              onClick={handleMigrateFirebaseData}
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
+            >
+              <RefreshCw size={18} />
+              Migrate Data from Firebase
+            </button>
+          </div>
+          <ManageUsersPanel
+            users={users}
+            subjects={subjects}
+            loading={loading}
+            onToggleRole={toggleUserRole}
+            onToggleSubjectAccess={toggleSubjectAccess}
+            onUpdateAllowedDevices={updateAllowedDevices}
+            onClearDevices={clearRegisteredDevices}
+            onRefreshPoints={refreshUserPoints}
+          />
+        </div>
       ) : (
         <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
@@ -2127,6 +2225,56 @@ export default function Admin() {
                       onChange={(content) => setQuestionForm({ ...questionForm, title: content })}
                       className="h-48 sm:h-64 mb-12"
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Attach Image (Optional)</label>
+                  <div className="flex items-center gap-4">
+                    {questionForm.imageUrl && (
+                      <div className="relative w-24 h-24 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <img src={questionForm.imageUrl} alt="Question" className="w-full h-full object-cover" />
+                        <button 
+                          type="button"
+                          onClick={() => setQuestionForm({ ...questionForm, imageUrl: '' })}
+                          className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full shadow-lg"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.onchange = async (e: any) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            setMessage({ text: 'Uploading image...', type: 'success' });
+                            const fileName = `${Date.now()}_${file.name}`;
+                            const { data, error } = await supabase.storage
+                              .from('questions')
+                              .upload(fileName, file);
+                            if (error) throw error;
+                            const { data: { publicUrl } } = supabase.storage
+                              .from('questions')
+                              .getPublicUrl(fileName);
+                            setQuestionForm({ ...questionForm, imageUrl: publicUrl });
+                            setMessage({ text: 'Image uploaded!', type: 'success' });
+                          } catch (err) {
+                            console.error(err);
+                            setMessage({ text: 'Upload failed', type: 'error' });
+                          }
+                        };
+                        input.click();
+                      }}
+                      className="flex items-center gap-2 px-6 py-4 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl border border-slate-100 dark:border-slate-700 hover:bg-slate-100 transition-all font-bold text-sm"
+                    >
+                      <ImageIcon size={18} /> {questionForm.imageUrl ? 'Change Image' : 'Upload Image'}
+                    </button>
                   </div>
                 </div>
 

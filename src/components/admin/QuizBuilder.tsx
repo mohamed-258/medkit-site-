@@ -3,9 +3,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import * as XLSX from 'xlsx';
-import { collection, addDoc, updateDoc, doc, writeBatch, query, where, getDocs, deleteDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../firebase';
+import { supabase } from '../../supabase';
 import { Subject, Section, Question } from '../../types';
 import { 
   Plus, Trash2, GripVertical, Image as ImageIcon, FileSpreadsheet, 
@@ -44,13 +42,26 @@ export default function QuizBuilder({ subjects, sections, onClose }: QuizBuilder
 
   const loadExistingQuestions = async () => {
     try {
-      let qQuery = query(collection(db, 'questions'), where('subjectId', '==', selectedSubject));
+      let query = supabase.from('questions').select('*').eq('subject_id', selectedSubject);
       if (selectedSection) {
-        qQuery = query(collection(db, 'questions'), where('sectionId', '==', selectedSection));
+        query = query.eq('section_id', selectedSection);
       }
-      const snapshot = await getDocs(qQuery);
-      const loadedQuestions = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Question));
-      loadedQuestions.sort((a, b) => (a.order || 0) - (b.order || 0));
+      const { data, error } = await query.order('order', { ascending: true });
+      if (error) throw error;
+
+      const loadedQuestions = (data || []).map(doc => ({
+        id: doc.id,
+        subjectId: doc.subject_id,
+        sectionId: doc.section_id,
+        title: doc.title,
+        imageUrl: doc.image_url,
+        options: doc.options,
+        correctAnswer: doc.correct_answer,
+        explanation: doc.explanation,
+        difficulty: doc.difficulty,
+        order: doc.order,
+        createdAt: doc.created_at
+      } as Question));
       setQuestions(loadedQuestions);
     } catch (error) {
       console.error("Error loading questions:", error);
@@ -119,10 +130,18 @@ export default function QuizBuilder({ subjects, sections, onClose }: QuizBuilder
 
     try {
       setMessage({ text: 'Uploading image...', type: 'success' });
-      const storageRef = ref(storage, `questions/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      updateEditingQuestion('imageUrl', url);
+      const fileName = `${Date.now()}_${file.name}`;
+      const { data, error } = await supabase.storage
+        .from('questions')
+        .upload(fileName, file);
+      
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('questions')
+        .getPublicUrl(fileName);
+
+      updateEditingQuestion('imageUrl', publicUrl);
       setMessage({ text: 'Image uploaded successfully!', type: 'success' });
     } catch (error) {
       console.error("Upload error:", error);
@@ -171,21 +190,24 @@ export default function QuizBuilder({ subjects, sections, onClose }: QuizBuilder
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const batch = writeBatch(db);
+      const upsertData = questions.map(q => ({
+        id: q.id || Math.random().toString(36).substring(2, 15),
+        subject_id: q.subjectId,
+        section_id: q.sectionId || null,
+        title: q.title,
+        image_url: q.imageUrl || null,
+        options: q.options,
+        correct_answer: q.correctAnswer,
+        explanation: q.explanation,
+        difficulty: q.difficulty,
+        order: q.order || 0,
+        created_at: q.createdAt || new Date().toISOString()
+      }));
+
+      const { error } = await supabase.from('questions').upsert(upsertData);
       
-      for (const q of questions) {
-        if (q.id) {
-          // Update existing
-          const docRef = doc(db, 'questions', q.id);
-          batch.update(docRef, { ...q });
-        } else {
-          // Add new
-          const docRef = doc(collection(db, 'questions'));
-          batch.set(docRef, { ...q, id: docRef.id, createdAt: new Date().toISOString() });
-        }
-      }
+      if (error) throw error;
       
-      await batch.commit();
       setMessage({ text: 'Quiz saved successfully!', type: 'success' });
       setTimeout(() => onClose(), 2000);
     } catch (error) {
@@ -205,6 +227,7 @@ export default function QuizBuilder({ subjects, sections, onClose }: QuizBuilder
     setQuestions(updated);
     if (editingIndex === index) setEditingIndex(null);
   };
+
 
   const filteredSections = sections.filter(s => s.subjectId === selectedSubject);
 

@@ -1,11 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, getCountFromServer } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { QuizResult, Question, UserProfile, Subject } from '../../types';
-import { Download, Users, Target, Clock, Activity, FileSpreadsheet, FileText } from 'lucide-react';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../supabase';
+import { Activity, Users, Target } from 'lucide-react';
 
 export default function AdminAnalytics() {
   const [loading, setLoading] = useState(true);
@@ -19,17 +14,16 @@ export default function AdminAnalytics() {
     const fetchCounts = async () => {
       setLoading(true);
       try {
-        const [resSnap, usersSnap, qSnap, subSnap] = await Promise.all([
-          getCountFromServer(collection(db, 'quizResults')),
-          getCountFromServer(collection(db, 'users')),
-          getCountFromServer(collection(db, 'questions')),
-          getDocs(collection(db, 'subjects'))
+        const [resSnap, usersSnap, qSnap] = await Promise.all([
+          supabase.from('quiz_results').select('*', { count: 'exact', head: true }),
+          supabase.from('users').select('*', { count: 'exact', head: true }),
+          supabase.from('questions').select('*', { count: 'exact', head: true })
         ]);
 
         setCounts({
-          totalQuizzes: resSnap.data().count,
-          totalUsers: usersSnap.data().count,
-          totalQuestions: qSnap.data().count
+          totalQuizzes: resSnap.count || 0,
+          totalUsers: usersSnap.count || 0,
+          totalQuestions: qSnap.count || 0
         });
         setLoading(false);
       } catch (err) {
@@ -48,7 +42,7 @@ export default function AdminAnalytics() {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
         <h2 className="text-2xl font-black text-slate-900 dark:text-white">Analytics Dashboard</h2>
-        <p className="text-slate-500 dark:text-slate-400">Basic platform overview (Optimized for low resource usage)</p>
+        <p className="text-slate-500 dark:text-slate-400">Basic platform overview</p>
       </div>
 
       {/* KPI Cards */}
@@ -82,9 +76,9 @@ export default function AdminAnalytics() {
         </div>
       </div>
 
-      <div className="bg-amber-50 dark:bg-amber-900/20 p-8 rounded-2xl border border-amber-100 dark:border-amber-800 text-center">
-        <h3 className="text-lg font-bold text-amber-900 dark:text-amber-100 mb-2">Resource Saving Mode Active</h3>
-        <p className="text-amber-700 dark:text-amber-300">Detailed performance charts and per-student analytics have been disabled to ensure your daily Firestore limits are not exceeded.</p>
+      <div className="bg-blue-50 dark:bg-blue-900/20 p-8 rounded-2xl border border-blue-100 dark:border-blue-800 text-center">
+        <h3 className="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">Platform Performance</h3>
+        <p className="text-blue-700 dark:text-blue-300">Supabase provides efficient real-time analytics and data management for your medical platform.</p>
       </div>
     </div>
   );

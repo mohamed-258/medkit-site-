@@ -2,8 +2,7 @@ import { useLocation, Link, useParams } from 'react-router-dom';
 import { Trophy, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Star, Zap, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabase';
 import { QuizResult } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -25,11 +24,24 @@ export default function Result() {
       if (state?.result || !resultId) return;
       
       try {
-        const docRef = doc(db, 'quizResults', resultId);
-        const docSnap = await getDoc(docRef);
+        const { data, error } = await supabase
+          .from('quiz_results')
+          .select('*')
+          .eq('id', resultId)
+          .single();
         
-        if (docSnap.exists()) {
-          setFetchedResult(docSnap.data() as QuizResult);
+        if (data) {
+          setFetchedResult({
+            id: data.id,
+            userId: data.user_id,
+            subjectId: data.subject_id,
+            sectionId: data.section_id,
+            score: data.score,
+            totalQuestions: data.total_questions,
+            timestamp: data.timestamp,
+            questions: data.questions,
+            selectedAnswers: data.selected_answers
+          } as QuizResult);
         }
       } catch (err) {
         console.error("Error fetching result:", err);

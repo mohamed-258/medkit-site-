@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { useAuth } from '../../App';
 import { QuizResult, Subject } from '../../types';
 import { Target, Sparkles, AlertCircle } from 'lucide-react';
