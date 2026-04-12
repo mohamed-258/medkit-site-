@@ -1,5 +1,5 @@
 import { useLocation, Link, useParams } from 'react-router-dom';
-import { Trophy, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Star, Zap, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Trophy, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Star, Zap, ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../supabase';
@@ -85,6 +85,26 @@ export default function Result() {
   const selectedAnswers = result.selectedAnswers || state?.selectedAnswers || {};
   const percentage = Math.round((result.score / result.totalQuestions) * 100);
 
+import { useNavigate } from 'react-router-dom';
+
+// ... inside Result component ...
+  const navigate = useNavigate();
+
+  const handleDeleteResult = async () => {
+    if (!result || !window.confirm('Are you sure you want to delete this quiz result?')) return;
+    
+    try {
+      const { error } = await supabase.from('quiz_results').delete().eq('id', result.id);
+      if (error) throw error;
+      
+      // Navigate back to dashboard after deletion
+      navigate('/dashboard');
+    } catch (err) {
+      console.error("Error deleting result:", err);
+      alert("Failed to delete result.");
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-10">
       {/* Score Card */}
@@ -92,6 +112,16 @@ export default function Result() {
         className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-100 dark:border-slate-800 p-10 lg:p-16 shadow-xl shadow-slate-200/50 dark:shadow-none text-center mb-12 relative overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 soft-glow"
       >
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
+        
+        <div className="absolute top-6 right-6">
+          <button
+            onClick={handleDeleteResult}
+            className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl transition-colors"
+            title="Delete Result"
+          >
+            <Trash2 size={24} />
+          </button>
+        </div>
         
         <div className="w-24 h-24 bg-amber-500/10 rounded-[2rem] flex items-center justify-center text-amber-500 mx-auto mb-8 shadow-inner">
           <Trophy size={48} />

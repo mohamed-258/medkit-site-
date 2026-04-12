@@ -7,7 +7,7 @@ import {
   BookOpen, Trophy, Activity, Star, Zap, Search, 
   ChevronRight, Lock, Award, Clock, CheckCircle2, 
   Circle, PlayCircle, TrendingUp, Calendar, 
-  ArrowUpRight, MoreHorizontal
+  ArrowUpRight, MoreHorizontal, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -22,6 +22,18 @@ export default function Dashboard() {
   const [subjectQuestionCounts, setSubjectQuestionCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [showLockedModal, setShowLockedModal] = useState(false);
+
+  const handleDeleteResult = async (resultId: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف نتيجة هذا الاختبار؟')) return;
+    try {
+      const { error } = await supabase.from('quiz_results').delete().eq('id', resultId);
+      if (error) throw error;
+      setRecentResults(prev => prev.filter(r => r.id !== resultId));
+    } catch (err) {
+      console.error("Error deleting result:", err);
+      alert("حدث خطأ أثناء حذف النتيجة.");
+    }
+  };
 
   const currentTab = useMemo(() => {
     if (location.pathname.includes('subjects')) return 'subjects';
@@ -100,6 +112,8 @@ export default function Dashboard() {
 
     loadData();
   }, [profile?.uid]);
+
+  // Duplicate handleDeleteResult removed
 
   const stats = useMemo(() => {
     const totalQuestions = profile?.totalQuestionsAnswered || 0;
@@ -274,15 +288,28 @@ export default function Dashboard() {
                             </p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className={cn(
-                            "text-lg font-black",
-                            scorePercent >= 80 ? "text-emerald-600" : 
-                            scorePercent >= 50 ? "text-blue-600" : "text-red-600"
-                          )}>
-                            {scorePercent}%
-                          </p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Score</p>
+                        <div className="text-right flex flex-col items-end gap-2">
+                          <div>
+                            <p className={cn(
+                              "text-lg font-black",
+                              scorePercent >= 80 ? "text-emerald-600" : 
+                              scorePercent >= 50 ? "text-blue-600" : "text-red-600"
+                            )}>
+                              {scorePercent}%
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Score</p>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeleteResult(result.id);
+                            }}
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            title="حذف النتيجة"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
                     </motion.div>
