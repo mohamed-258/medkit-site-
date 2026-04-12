@@ -37,8 +37,6 @@ const QuizBuilder = lazy(() => import('../components/admin/QuizBuilder'));
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -1275,89 +1273,7 @@ export default function Admin() {
     }
   };
 
-  const handleMigrateFirebaseData = async () => {
-    setMessage({ text: 'Starting migration from Firebase...', type: 'success' });
-    try {
-      // 1. Migrate Users
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const firebaseUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      if (firebaseUsers.length > 0) {
-        const usersToInsert = firebaseUsers.map((u: any) => ({
-          uid: u.id,
-          email: u.email || '',
-          display_name: u.displayName || '',
-          first_name: u.firstName || null,
-          father_name: u.fatherName || null,
-          date_of_birth: u.dateOfBirth || null,
-          role: u.role || 'student',
-          points: u.points || 0,
-          completed_quizzes: u.completedQuizzes || 0,
-          total_questions_answered: u.totalQuestionsAnswered || 0,
-          total_correct_answers: u.totalCorrectAnswers || 0,
-          section_points: u.sectionPoints || {},
-          allowed_subjects: u.allowedSubjects || [],
-          allowed_devices: u.allowedDevices || 2,
-          registered_devices: u.registeredDevices || [],
-          created_at: u.createdAt || new Date().toISOString()
-        }));
-
-        // Upsert users to avoid duplicates
-        const { error: usersError } = await supabase.from('users').upsert(usersToInsert, { onConflict: 'uid' });
-        if (usersError) throw usersError;
-      }
-
-      // 2. Migrate Quiz Results
-      const resultsSnapshot = await getDocs(collection(db, 'quizResults'));
-      const firebaseResults = resultsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      if (firebaseResults.length > 0) {
-        const resultsToInsert = firebaseResults.map((r: any) => ({
-          id: r.id,
-          user_id: r.userId,
-          subject_id: r.subjectId,
-          section_id: r.sectionId || null,
-          score: r.score || 0,
-          total_questions: r.totalQuestions || 0,
-          timestamp: r.timestamp || new Date().toISOString(),
-          questions: r.questions || [],
-          selected_answers: r.selectedAnswers || {}
-        }));
-
-        // Upsert results
-        const { error: resultsError } = await supabase.from('quiz_results').upsert(resultsToInsert, { onConflict: 'id' });
-        if (resultsError) throw resultsError;
-      }
-
-      setMessage({ text: `Successfully migrated ${firebaseUsers.length} users and ${firebaseResults.length} quiz results from Firebase!`, type: 'success' });
-      
-      // Refresh user list
-      const { data: updatedUsers } = await supabase.from('users').select('*');
-      if (updatedUsers) {
-        setUsers(updatedUsers.map(u => ({
-          uid: u.uid,
-          email: u.email,
-          displayName: u.display_name,
-          firstName: u.first_name,
-          fatherName: u.father_name,
-          dateOfBirth: u.date_of_birth,
-          role: u.role,
-          points: u.points,
-          completedQuizzes: u.completed_quizzes,
-          totalQuestionsAnswered: u.total_questions_answered,
-          totalCorrectAnswers: u.total_correct_answers,
-          sectionPoints: u.section_points,
-          allowedSubjects: u.allowed_subjects,
-          allowedDevices: u.allowed_devices,
-          registeredDevices: u.registered_devices,
-          createdAt: u.created_at
-        })));
-      }
-    } catch (err: any) {
-      console.error("Migration error:", err);
-      setMessage({ text: `Migration failed: ${err.message}`, type: 'error' });
-    }
-  };
+  // Removed handleMigrateFirebaseData to eliminate Firebase reads
 
   const handleBulkMoveToSection = async (sectionId: string) => {
     if (!sectionId || selectedQuestionIds.size === 0) return;
@@ -1712,13 +1628,7 @@ export default function Admin() {
       ) : activeTab === 'users' ? (
         <div className="space-y-6">
           <div className="flex justify-end">
-            <button
-              onClick={handleMigrateFirebaseData}
-              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
-            >
-              <RefreshCw size={18} />
-              Migrate Data from Firebase
-            </button>
+            {/* Migration button removed */}
           </div>
           <ManageUsersPanel
             users={users}
