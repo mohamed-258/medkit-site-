@@ -1,4 +1,4 @@
-import { useLocation, Link, useParams } from 'react-router-dom';
+import { useLocation, Link, useParams, useNavigate } from 'react-router-dom';
 import { Trophy, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Star, Zap, ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -85,13 +85,10 @@ export default function Result() {
   const selectedAnswers = result.selectedAnswers || state?.selectedAnswers || {};
   const percentage = Math.round((result.score / result.totalQuestions) * 100);
 
-import { useNavigate } from 'react-router-dom';
-
-// ... inside Result component ...
   const navigate = useNavigate();
 
   const handleDeleteResult = async () => {
-    if (!result || !window.confirm('Are you sure you want to delete this quiz result?')) return;
+    if (!result || !window.confirm('هل أنت متأكد من رغبتك في حذف نتيجة هذا الاختبار؟')) return;
     
     try {
       const { error } = await supabase.from('quiz_results').delete().eq('id', result.id);
@@ -101,7 +98,7 @@ import { useNavigate } from 'react-router-dom';
       navigate('/dashboard');
     } catch (err) {
       console.error("Error deleting result:", err);
-      alert("Failed to delete result.");
+      alert("حدث خطأ أثناء حذف النتيجة.");
     }
   };
 
