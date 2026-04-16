@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [recentResults, setRecentResults] = useState<QuizResult[]>([]);
   const [subjectQuestionCounts, setSubjectQuestionCounts] = useState<Record<string, number>>({});
+  const [subjectProgress, setSubjectProgress] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [showLockedModal, setShowLockedModal] = useState(false);
 
@@ -106,7 +107,7 @@ export default function Dashboard() {
 
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchSubjects(), fetchRecentResults()]);
+      await Promise.all([fetchSubjects(), fetchRecentResults(), fetchProgress()]);
       setLoading(false);
     };
 
@@ -136,8 +137,46 @@ export default function Dashboard() {
   }, [profile]);
 
   const getSubjectProgress = (subjectId: string) => {
-    // Simplified progress since we're not fetching all results to save resources
-    return 0;
+    return subjectProgress[subjectId] || 0;
+  };
+
+  const fetchProgress = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('quiz_results')
+        .select('subjectId, questions, selectedAnswers')
+        .eq('user_id', profile.uid);
+      if (error) throw error;
+
+      const progress: Record<string, number> = {};
+      
+      // Calculate progress
+      data.forEach(result => {
+        if (!result.questions || !result.selectedAnswers) return;
+        
+        const subjectId = result.subjectId;
+        if (!progress[subjectId]) progress[subjectId] = 0;
+        
+        // Count unique correct answers for this subject
+        let correctCount = 0;
+        result.questions.forEach((q, i) => {
+          if (result.selectedAnswers && result.selectedAnswers[i] === q.correctAnswer) {
+            correctCount++;
+          }
+        });
+        
+        progress[subjectId] += (correctCount / result.questions.length) * 100;
+      });
+      
+      // Normalize to 100
+      Object.keys(progress).forEach(subjectId => {
+        progress[subjectId] = Math.min(100, Math.round(progress[subjectId] / (data.filter(r => r.subjectId === subjectId).length || 1)));
+      });
+
+      setSubjectProgress(progress);
+    } catch (error) {
+      console.error("Error fetching progress:", error);
+    }
   };
 
   const getSubjectStatus = (subjectId: string) => {

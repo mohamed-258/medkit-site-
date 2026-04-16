@@ -1316,23 +1316,30 @@ export default function Admin() {
   };
 
   const filteredQuestions = useMemo(() => {
-    return questions.filter(q => {
-      if (questionSearchQuery) {
-        const query = questionSearchQuery.toLowerCase();
+    let result = questions;
+
+    // Apply search first
+    if (questionSearchQuery) {
+      const query = questionSearchQuery.toLowerCase();
+      result = result.filter(q => {
         const matchesTitle = q.title.toLowerCase().includes(query);
         const matchesOptions = q.options.some(opt => opt.toLowerCase().includes(query));
         const matchesExplanation = q.explanation.toLowerCase().includes(query);
         return matchesTitle || matchesOptions || matchesExplanation;
-      }
+      });
+    }
 
-      if (selectedSubjectId && q.subjectId !== selectedSubjectId) {
+    // Apply other filters
+    result = result.filter(q => {
+      if (selectedSubjectId) {
         const subject = subjects.find(s => s.id === selectedSubjectId);
-        if (!(subject && (subject as any).manualId === q.subjectId)) return false;
+        if (subject && subject.id !== q.subjectId && (subject as any).manualId !== q.subjectId) return false;
       }
       if (selectedSectionId && q.sectionId !== selectedSectionId) return false;
-      
       return true;
-    }).sort((a, b) => {
+    });
+
+    return result.sort((a, b) => {
       const dateA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : 0;
       const dateB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : 0;
       return dateB - dateA;
