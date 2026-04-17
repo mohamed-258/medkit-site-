@@ -820,6 +820,10 @@ export default function Admin() {
         setUsers((uData || []).map(doc => ({
           uid: doc.uid,
           email: doc.email,
+          displayName: doc.display_name,
+          firstName: doc.first_name,
+          fatherName: doc.father_name,
+          dateOfBirth: doc.date_of_birth,
           role: doc.role,
           points: doc.points,
           sectionPoints: doc.section_points,

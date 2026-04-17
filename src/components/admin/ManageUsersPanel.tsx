@@ -24,6 +24,8 @@ export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
+  firstName?: string;
+  fatherName?: string;
   dateOfBirth?: string;
   role: UserRole;
   points: number;
@@ -96,6 +98,8 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
     const query = search.toLowerCase();
     return uniqueUsers.filter(user => 
       (user.displayName || '').toLowerCase().includes(query) || 
+      (user.firstName || '').toLowerCase().includes(query) || 
+      (user.fatherName || '').toLowerCase().includes(query) || 
       (user.email || '').toLowerCase().includes(query)
     );
   }, [users, search]);
@@ -199,7 +203,7 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-blue-600 transition-colors">
-                                  {user.displayName || user.email || 'Unknown User'}
+                                  {user.displayName || (user.firstName ? `${user.firstName} ${user.fatherName || ''}` : 'N/A')}
                                 </span>
                                 {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                               </div>
