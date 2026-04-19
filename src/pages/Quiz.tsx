@@ -255,18 +255,22 @@ export default function Quiz() {
         }
 
         if (subjectId) {
-          const progressKey = `quiz_progress_${subjectId}_all`;
-          const savedStr = localStorage.getItem(progressKey);
-          if (savedStr) {
-            try {
-              const parsed = JSON.parse(savedStr);
-              setSavedProgress(parsed);
-              setPendingSectionId(undefined);
-              setShowResumeModal(true);
-              setLoading(false);
-              return;
-            } catch (e) {
-              console.error("Error parsing saved progress:", e);
+          // Check for all progress keys for this subject
+          const sectionsToCheck = ['all', ...sections.map(s => s.id)];
+          for (const sectionId of sectionsToCheck) {
+            const progressKey = `quiz_progress_${subjectId}_${sectionId}`;
+            const savedStr = localStorage.getItem(progressKey);
+            if (savedStr) {
+              try {
+                const parsed = JSON.parse(savedStr);
+                setSavedProgress(parsed);
+                setPendingSectionId(sectionId === 'all' ? undefined : sectionId);
+                setShowResumeModal(true);
+                setLoading(false);
+                return;
+              } catch (e) {
+                console.error("Error parsing saved progress:", e);
+              }
             }
           }
         }
@@ -377,6 +381,7 @@ export default function Quiz() {
   };
 
   const resumeQuiz = () => {
+    console.log("Resuming quiz:", savedProgress);
     if (savedProgress) {
       setQuestions(savedProgress.questions);
       setCurrentIdx(savedProgress.currentIdx);
@@ -429,6 +434,7 @@ export default function Quiz() {
 
     saveTimeoutRef.current = setTimeout(() => {
       try {
+        console.log("Saving progress:", progressKey, progress);
         localStorage.setItem(progressKey, JSON.stringify(progress));
       } catch (err) {
         console.error("Error saving progress to localStorage:", err);
