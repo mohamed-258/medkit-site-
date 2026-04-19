@@ -1854,11 +1854,7 @@ export default function Admin() {
                       <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 text-[9px] font-black uppercase tracking-wider rounded-lg">
                         {subjects.find(s => s.id === q.subjectId || (s as any).manualId === q.subjectId)?.nameEn || 'Subject'}
                       </span>
-                      {q.sectionId && (
-                        <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 text-[9px] font-black uppercase tracking-wider rounded-lg">
-                          {sections.find(s => s.id === q.sectionId)?.nameEn || sections.find(s => s.id === q.sectionId)?.nameAr || 'Section'}
-                        </span>
-                      )}
+
                       <span className={cn(
                         "px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg",
                         q.difficulty === 'easy' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20" :
@@ -1871,7 +1867,7 @@ export default function Admin() {
                     {q.imageUrl && <img src={q.imageUrl} alt="Question" loading="lazy" className="h-20 rounded-lg mb-2 object-cover" />}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
                     onClick={() => {
                       setEditingQuestion(q);
@@ -2199,47 +2195,71 @@ export default function Admin() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                  {questionForm.options?.map((opt, i) => (
-                    <div key={i} className="space-y-2">
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Option {String.fromCharCode(65 + i)}</label>
-                      <input
-                        type="text"
-                        required
-                        value={opt}
-                        onChange={(e) => {
-                          const newOpts = [...(questionForm.options || [])];
-                          newOpts[i] = e.target.value;
-                          setQuestionForm({ ...questionForm, options: newOpts });
-                        }}
-                        className="w-full px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
-                      />
-                    </div>
-                  ))}
-                </div>
+                 <div className="grid grid-cols-1 gap-4 sm:gap-6">
+                   {questionForm.options?.map((opt, i) => (
+                     <div key={i} className="flex gap-2 items-center">
+                       <div className="flex-1 space-y-2">
+                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Option {String.fromCharCode(65 + i)}</label>
+                         <input
+                           type="text"
+                           required
+                           value={opt}
+                           onChange={(e) => {
+                             const newOpts = [...(questionForm.options || [])];
+                             newOpts[i] = e.target.value;
+                             setQuestionForm({ ...questionForm, options: newOpts });
+                           }}
+                           className="w-full px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
+                         />
+                       </div>
+                       <button
+                         type="button"
+                         onClick={() => {
+                           const newOpts = questionForm.options!.filter((_, idx) => idx !== i);
+                           let newCorrectAnswer = questionForm.correctAnswer;
+                           if (newCorrectAnswer === i) newCorrectAnswer = 0;
+                           else if (newCorrectAnswer > i) newCorrectAnswer--;
+                           setQuestionForm({ ...questionForm, options: newOpts, correctAnswer: newCorrectAnswer });
+                         }}
+                         className="mt-6 p-3 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100 transition-all"
+                       >
+                         <Trash2 size={20} />
+                       </button>
+                     </div>
+                   ))}
+                   <button
+                     type="button"
+                     onClick={() => {
+                       setQuestionForm({ ...questionForm, options: [...(questionForm.options || []), ''] });
+                     }}
+                     className="w-full py-4 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                   >
+                     + Add Option
+                   </button>
+                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Correct Answer</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[0, 1, 2, 3].map((idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setQuestionForm({ ...questionForm, correctAnswer: idx })}
-                          className={cn(
-                            "py-2 sm:py-3 rounded-xl font-black text-sm transition-all",
-                            questionForm.correctAnswer === idx 
-                              ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20" 
-                              : "bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
-                          )}
-                        >
-                          {String.fromCharCode(65 + idx)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
+                   <div className="space-y-2">
+                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Correct Answer</label>
+                     <div className="grid grid-cols-4 gap-2">
+                       {questionForm.options?.map((_, idx) => (
+                         <button
+                           key={idx}
+                           type="button"
+                           onClick={() => setQuestionForm({ ...questionForm, correctAnswer: idx })}
+                           className={cn(
+                             "py-2 sm:py-3 rounded-xl font-black text-sm transition-all",
+                             questionForm.correctAnswer === idx 
+                               ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20" 
+                               : "bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                           )}
+                         >
+                           {String.fromCharCode(65 + idx)}
+                         </button>
+                       ))}
+                     </div>
+                   </div>
+                 </div>
 
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Explanation (Optional)</label>
