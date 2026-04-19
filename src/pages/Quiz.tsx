@@ -255,22 +255,18 @@ export default function Quiz() {
         }
 
         if (subjectId) {
-          // Check for all progress keys for this subject
-          const sectionsToCheck = ['all', ...sections.map(s => s.id)];
-          for (const sectionId of sectionsToCheck) {
-            const progressKey = `quiz_progress_${subjectId}_${sectionId}`;
-            const savedStr = localStorage.getItem(progressKey);
-            if (savedStr) {
-              try {
-                const parsed = JSON.parse(savedStr);
-                setSavedProgress(parsed);
-                setPendingSectionId(sectionId === 'all' ? undefined : sectionId);
-                setShowResumeModal(true);
-                setLoading(false);
-                return;
-              } catch (e) {
-                console.error("Error parsing saved progress:", e);
-              }
+          const progressKey = `quiz_progress_${subjectId}_all`;
+          const savedStr = localStorage.getItem(progressKey);
+          if (savedStr) {
+            try {
+              const parsed = JSON.parse(savedStr);
+              setSavedProgress(parsed);
+              setPendingSectionId(undefined);
+              setShowResumeModal(true);
+              setLoading(false);
+              return;
+            } catch (e) {
+              console.error("Error parsing saved progress:", e);
             }
           }
         }
@@ -381,7 +377,6 @@ export default function Quiz() {
   };
 
   const resumeQuiz = () => {
-    console.log("Resuming quiz:", savedProgress);
     if (savedProgress) {
       setQuestions(savedProgress.questions);
       setCurrentIdx(savedProgress.currentIdx);
@@ -404,11 +399,16 @@ export default function Quiz() {
       localStorage.removeItem(progressKey);
     }
     setShowResumeModal(false);
+    
+    if (selectedSectionId === null && (sections.length > 0 || sectionQuestionCounts['mistakes'] > 0)) {
+      setShowSectionSelection(true);
+      return;
+    }
+    
     fetchQuestions(subjectId!, subject?.id, pendingSectionId);
   };
 
   // Save progress logic
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latestProgressRef = useRef<any>(null);
 
   useEffect(() => {
@@ -429,22 +429,30 @@ export default function Quiz() {
     };
     
     latestProgressRef.current = { key: progressKey, data: progress };
+  }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, feedbackMode, quizStarted]);
 
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-
-    saveTimeoutRef.current = setTimeout(() => {
-      try {
-        console.log("Saving progress:", progressKey, progress);
-        localStorage.setItem(progressKey, JSON.stringify(progress));
-      } catch (err) {
-        console.error("Error saving progress to localStorage:", err);
+  useEffect(() => {
+    // Periodic save every 2 seconds to avoid excessive localStorage calls
+    const saveInterval = setInterval(() => {
+      if (latestProgressRef.current && !isFinished && quizStarted) {
+        try {
+          localStorage.setItem(latestProgressRef.current.key, JSON.stringify(latestProgressRef.current.data));
+        } catch (err) {
+          console.error("Error saving progress to localStorage:", err);
+        }
       }
-    }, 1000);
+    }, 2000);
 
     return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      clearInterval(saveInterval);
+      // Ensure we save one last time when component unmounts in a SPA navigation
+      if (latestProgressRef.current && !isFinished) {
+        try {
+          localStorage.setItem(latestProgressRef.current.key, JSON.stringify(latestProgressRef.current.data));
+        } catch (e) {}
+      }
     };
-  }, [currentIdx, selectedAnswers, timeLeft, flaggedQuestions, visitedQuestions, questions, isFinished, loading, showResumeModal, subjectId, selectedSectionId, feedbackMode, quizStarted]);
+  }, [isFinished, quizStarted]);
 
   // Save on exit / tab close
   useEffect(() => {
@@ -540,7 +548,11 @@ export default function Quiz() {
         </div>
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Resume Quiz?</h2>
         <p className="text-slate-500 dark:text-slate-400 mb-8">
-          You have an unfinished quiz in progress. Would you like to resume where you left off or start a new one?
+          You have an unfinished quiz in progress {pendingSectionId && pendingSectionId !== 'all' ? (
+            <span className="font-bold text-slate-700 dark:text-slate-200">({sections.find(s => s.id === pendingSectionId)?.nameEn || sections.find(s => s.id === pendingSectionId)?.nameAr || 'Section'})</span>
+          ) : (
+            <span className="font-bold text-slate-700 dark:text-slate-200">(All Sections)</span>
+          )}. Would you like to resume where you left off or start a new one?
         </p>
         <div className="space-y-3">
           <button
