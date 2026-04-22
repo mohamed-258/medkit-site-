@@ -1195,18 +1195,42 @@ export default function Admin() {
     // Confirmation removed for iframe compatibility
     try {
       const table = coll === 'quizResults' ? 'quiz_results' : coll;
-      await supabase.from(table).delete().eq('id', id);
       
-      // Update local state
       if (coll === 'subjects') {
+        // Cascade delete in Supabase tables
+        await supabase.from('questions').delete().eq('subject_id', id);
+        await supabase.from('sections').delete().eq('subject_id', id);
+        await supabase.from('subjects').delete().eq('id', id);
+        
+        // Update local state
         setSubjects(prev => prev.filter(s => s.id !== id));
         setSections(prev => prev.filter(s => s.subjectId !== id));
         setQuestions(prev => prev.filter(q => q.subjectId !== id));
       } else if (coll === 'sections') {
-        setSections(prev => prev.filter(s => s.id !== id));
-        setQuestions(prev => prev.filter(q => q.sectionId !== id));
-      } else if (coll === 'questions') {
-        setQuestions(prev => prev.filter(q => q.id !== id));
+        // Find if any subsections exist for this section (if it's a parent section)
+        const subSections = sections.filter(s => s.parentId === id);
+        const subSectionIds = subSections.map(s => s.id);
+        const allSectionIdsToDelete = [id, ...subSectionIds];
+
+        // Delete questions for this section and its subsections
+        await supabase.from('questions').delete().in('section_id', allSectionIdsToDelete);
+        
+        // Delete subsections
+        if (subSectionIds.length > 0) {
+          await supabase.from('sections').delete().in('id', subSectionIds);
+        }
+        
+        // Delete the section itself
+        await supabase.from('sections').delete().eq('id', id);
+
+        // Update local state
+        setSections(prev => prev.filter(s => !allSectionIdsToDelete.includes(s.id)));
+        setQuestions(prev => prev.filter(q => q.sectionId && !allSectionIdsToDelete.includes(q.sectionId)));
+      } else {
+        await supabase.from(table).delete().eq('id', id);
+        if (coll === 'questions') {
+          setQuestions(prev => prev.filter(q => q.id !== id));
+        }
       }
       
       setMessage({ text: 'Deleted successfully along with associated content', type: 'success' });
