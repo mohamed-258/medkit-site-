@@ -198,12 +198,17 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
                             <div className="size-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm">
-                              {(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
+                              {(() => {
+                                if (user.firstName) return user.firstName.charAt(0).toUpperCase();
+                                if (user.displayName && user.displayName !== 'Student') return user.displayName.charAt(0).toUpperCase();
+                                if (user.email) return user.email.charAt(0).toUpperCase();
+                                return 'U';
+                              })()}
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-blue-600 transition-colors">
-                                  {user.displayName || (user.firstName ? `${user.firstName} ${user.fatherName || ''}` : 'N/A')}
+                                  {user.firstName ? `${user.firstName} ${user.fatherName || ''}` : (user.displayName && user.displayName !== 'Student' ? user.displayName : (user.email ? user.email.split('@')[0] : 'Student'))}
                                 </span>
                                 {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                               </div>

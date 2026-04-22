@@ -131,24 +131,33 @@ function AuthProvider({ children }: { children: ReactNode }) {
     return deviceId;
   };
 
-  const mapUserToProfile = (data: any): UserProfile => ({
-    uid: data.uid,
-    email: data.email,
-    displayName: data.display_name,
-    firstName: data.first_name,
-    fatherName: data.father_name,
-    dateOfBirth: data.date_of_birth,
-    role: data.role,
-    points: data.points,
-    completedQuizzes: data.completed_quizzes,
-    totalQuestionsAnswered: data.total_questions_answered,
-    totalCorrectAnswers: data.total_correct_answers,
-    sectionPoints: data.section_points,
-    allowedSubjects: data.allowed_subjects,
-    allowedDevices: data.allowed_devices,
-    registeredDevices: data.registered_devices,
-    createdAt: data.created_at,
-  });
+  const mapUserToProfile = (data: any): UserProfile => {
+    let finalDisplayName = data.display_name;
+    if (data.first_name) {
+      finalDisplayName = `${data.first_name} ${data.father_name || ''}`.trim();
+    } else if (!finalDisplayName || finalDisplayName === 'Student') {
+      finalDisplayName = data.email ? data.email.split('@')[0] : 'Student';
+    }
+
+    return {
+      uid: data.uid,
+      email: data.email,
+      displayName: finalDisplayName,
+      firstName: data.first_name,
+      fatherName: data.father_name,
+      dateOfBirth: data.date_of_birth,
+      role: data.role,
+      points: data.points,
+      completedQuizzes: data.completed_quizzes,
+      totalQuestionsAnswered: data.total_questions_answered,
+      totalCorrectAnswers: data.total_correct_answers,
+      sectionPoints: data.section_points,
+      allowedSubjects: data.allowed_subjects,
+      allowedDevices: data.allowed_devices,
+      registeredDevices: data.registered_devices,
+      createdAt: data.created_at,
+    };
+  };
 
   useEffect(() => {
     let subscription: any;
