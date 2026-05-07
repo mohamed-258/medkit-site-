@@ -43,6 +43,39 @@ export default function Quiz() {
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getGroupStart = useCallback((idx: number) => {
+    if (!questions[idx]?.imageUrl) return idx;
+    let i = idx;
+    while (i > 0 && questions[i - 1].imageUrl === questions[idx].imageUrl) {
+      i--;
+    }
+    return i;
+  }, [questions]);
+
+  const getGroupEnd = useCallback((idx: number) => {
+    if (!questions[idx]?.imageUrl) return idx + 1;
+    let i = idx;
+    while (i < questions.length - 1 && questions[i + 1].imageUrl === questions[idx].imageUrl) {
+      i++;
+    }
+    return i + 1;
+  }, [questions]);
+
+  // Find questions sharing the same image to group them on screen
+  const currentGroupQuestions = useMemo(() => {
+    if (!questions.length) return [];
+    const start = getGroupStart(currentIdx);
+    const end = getGroupEnd(currentIdx);
+    return questions.slice(start, end);
+  }, [questions, currentIdx, getGroupStart, getGroupEnd]);
+
+  const groupStartIdx = useMemo(() => getGroupStart(currentIdx), [currentIdx, getGroupStart]);
+  const nextIdx = useMemo(() => getGroupEnd(currentIdx), [currentIdx, getGroupEnd]);
+  const prevIdx = useMemo(() => {
+    if (groupStartIdx === 0) return 0;
+    return getGroupStart(groupStartIdx - 1);
+  }, [groupStartIdx, getGroupStart]);
+
   const handleAnswer = useCallback((optionIdx: number) => {
     if (isFinished) return;
     if (feedbackMode === 'instant' && selectedAnswers[currentIdx] !== undefined) return;
@@ -805,39 +838,6 @@ export default function Quiz() {
       </div>
     </div>
   );
-
-  const getGroupStart = useCallback((idx: number) => {
-    if (!questions[idx]?.imageUrl) return idx;
-    let i = idx;
-    while (i > 0 && questions[i - 1].imageUrl === questions[idx].imageUrl) {
-      i--;
-    }
-    return i;
-  }, [questions]);
-
-  const getGroupEnd = useCallback((idx: number) => {
-    if (!questions[idx]?.imageUrl) return idx + 1;
-    let i = idx;
-    while (i < questions.length - 1 && questions[i + 1].imageUrl === questions[idx].imageUrl) {
-      i++;
-    }
-    return i + 1;
-  }, [questions]);
-
-  // Find questions sharing the same image to group them on screen
-  const currentGroupQuestions = useMemo(() => {
-    if (!questions.length) return [];
-    const start = getGroupStart(currentIdx);
-    const end = getGroupEnd(currentIdx);
-    return questions.slice(start, end);
-  }, [questions, currentIdx, getGroupStart, getGroupEnd]);
-
-  const groupStartIdx = useMemo(() => getGroupStart(currentIdx), [currentIdx, getGroupStart]);
-  const nextIdx = useMemo(() => getGroupEnd(currentIdx), [currentIdx, getGroupEnd]);
-  const prevIdx = useMemo(() => {
-    if (groupStartIdx === 0) return 0;
-    return getGroupStart(groupStartIdx - 1);
-  }, [groupStartIdx, getGroupStart]);
 
   const currentQuestion = questions[currentIdx];
   const progress = ((currentIdx + currentGroupQuestions.length) / questions.length) * 100;
