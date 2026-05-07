@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { handleSupabaseError, OperationType } from '../lib/supabase-errors';
@@ -156,17 +156,20 @@ export default function Quiz() {
       // Space or Right Arrow for Next
       if (e.key === ' ' || e.key === 'ArrowRight') {
         e.preventDefault();
-        if (currentIdx < questions.length - 1) {
-          setCurrentIdx(prev => prev + 1);
-        }
+        setCurrentIdx(prev => {
+          const next = getGroupEnd(prev);
+          return next < questions.length ? next : prev;
+        });
       }
 
       // Left Arrow for Previous
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        if (currentIdx > 0) {
-          setCurrentIdx(prev => prev - 1);
-        }
+        setCurrentIdx(prev => {
+          const groupStart = getGroupStart(prev);
+          if (groupStart === 0) return 0;
+          return getGroupStart(groupStart - 1);
+        });
       }
       
       // 'F' or 'B' for Flag/Bookmark
@@ -335,7 +338,27 @@ export default function Quiz() {
         qList = (qData || []).map(mapQuestion);
       }
       
-      const shuffled = qList.sort(() => Math.random() - 0.5);
+      // Group questions by imageUrl to keep related questions adjacent
+      qList.sort((a, b) => (a.order || 0) - (b.order || 0)); // Ensure sequential order is preserved first
+      
+      const grouped: Question[][] = [];
+      let currentGroup: Question[] = [];
+      
+      for (const q of qList) {
+        if (q.imageUrl && currentGroup.length > 0 && currentGroup[0].imageUrl === q.imageUrl) {
+          currentGroup.push(q);
+        } else {
+          if (currentGroup.length > 0) grouped.push(currentGroup);
+          currentGroup = [q];
+        }
+      }
+      if (currentGroup.length > 0) grouped.push(currentGroup);
+
+      // Shuffle the groups, not individual questions
+      grouped.sort(() => Math.random() - 0.5);
+      
+      // Flatten back while preserving internal group order
+      const shuffled = grouped.flat();
       setQuestions(shuffled);
       
       setTimeLeft(shuffled.length * 60);
@@ -783,8 +806,41 @@ export default function Quiz() {
     </div>
   );
 
+  const getGroupStart = useCallback((idx: number) => {
+    if (!questions[idx]?.imageUrl) return idx;
+    let i = idx;
+    while (i > 0 && questions[i - 1].imageUrl === questions[idx].imageUrl) {
+      i--;
+    }
+    return i;
+  }, [questions]);
+
+  const getGroupEnd = useCallback((idx: number) => {
+    if (!questions[idx]?.imageUrl) return idx + 1;
+    let i = idx;
+    while (i < questions.length - 1 && questions[i + 1].imageUrl === questions[idx].imageUrl) {
+      i++;
+    }
+    return i + 1;
+  }, [questions]);
+
+  // Find questions sharing the same image to group them on screen
+  const currentGroupQuestions = useMemo(() => {
+    if (!questions.length) return [];
+    const start = getGroupStart(currentIdx);
+    const end = getGroupEnd(currentIdx);
+    return questions.slice(start, end);
+  }, [questions, currentIdx, getGroupStart, getGroupEnd]);
+
+  const groupStartIdx = useMemo(() => getGroupStart(currentIdx), [currentIdx, getGroupStart]);
+  const nextIdx = useMemo(() => getGroupEnd(currentIdx), [currentIdx, getGroupEnd]);
+  const prevIdx = useMemo(() => {
+    if (groupStartIdx === 0) return 0;
+    return getGroupStart(groupStartIdx - 1);
+  }, [groupStartIdx, getGroupStart]);
+
   const currentQuestion = questions[currentIdx];
-  const progress = ((currentIdx + 1) / questions.length) * 100;
+  const progress = ((currentIdx + currentGroupQuestions.length) / questions.length) * 100;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-20">
@@ -865,119 +921,153 @@ export default function Quiz() {
                 <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">1-4</kbd> to answer
               </div>
 
-              <div className="mb-8 flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <span className={cn(
-                    "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider mb-4 inline-block",
-                    currentQuestion.difficulty === 'easy' ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600" :
-                    currentQuestion.difficulty === 'medium' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600" :
-                    "bg-red-50 dark:bg-red-900/20 text-red-600"
-                  )}>
-                    {currentQuestion.difficulty === 'easy' ? 'Easy' : currentQuestion.difficulty === 'medium' ? 'Medium' : 'Hard'}
-                  </span>
-                  <div className="prose dark:prose-invert max-w-none text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-white leading-relaxed break-words overflow-wrap-anywhere overflow-x-auto" dangerouslySetInnerHTML={{ __html: currentQuestion.title }} />
-                  {currentQuestion.imageUrl && (
-                    <img src={currentQuestion.imageUrl} alt="Question" loading="lazy" className="mt-6 max-h-72 rounded-2xl object-contain border border-slate-100 dark:border-slate-800 shadow-sm" />
-                  )}
-                </div>
-                <button
-                  onClick={() => toggleFlag(currentIdx)}
-                  className={cn(
-                    "p-3 sm:p-4 rounded-2xl border-2 transition-all shrink-0 flex flex-col items-center gap-1 group",
-                    flaggedQuestions.has(currentIdx)
-                      ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500 text-amber-500 shadow-inner"
-                      : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:border-amber-300 hover:text-amber-500"
-                  )}
-                  title="Bookmark this question (Shortcut: F)"
-                >
-                  <Flag size={24} fill={flaggedQuestions.has(currentIdx) ? "currentColor" : "none"} className="group-hover:scale-110 transition-transform" />
-                  <span className="text-[9px] font-bold uppercase tracking-wider hidden sm:block">Bookmark</span>
-                </button>
+              <div className="mb-8">
+                {currentGroupQuestions[0].imageUrl && (
+                  <div className="mb-8 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    <img src={currentGroupQuestions[0].imageUrl} alt="Context" loading="lazy" className="max-h-96 w-full rounded-xl object-contain shadow-sm" />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:gap-4">
-                {currentQuestion.options.map((option, i) => {
-                  const isSelected = selectedAnswers[currentIdx] === i;
-                  const isAnswered = selectedAnswers[currentIdx] !== undefined;
+              <div className="space-y-12">
+                {currentGroupQuestions.map((q, groupOffset) => {
+                  const globalIdx = groupStartIdx + groupOffset;
+                  const isAnswered = selectedAnswers[globalIdx] !== undefined;
                   const showInstantFeedback = feedbackMode === 'instant' && isAnswered;
-                  const isCorrect = i === currentQuestion.correctAnswer;
-                  
-                  let buttonClass = "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-slate-50 dark:hover:bg-slate-800/80";
-                  let iconClass = "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 group-hover:text-blue-600 dark:group-hover:text-blue-400";
-                  
-                  if (showInstantFeedback) {
-                    if (isCorrect) {
-                      buttonClass = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm";
-                      iconClass = "bg-emerald-500 text-white shadow-md shadow-emerald-500/30";
-                    } else if (isSelected) {
-                      buttonClass = "bg-red-50 dark:bg-red-900/20 border-red-500 text-red-700 dark:text-red-400 shadow-sm";
-                      iconClass = "bg-red-500 text-white shadow-md shadow-red-500/30";
-                    } else {
-                      buttonClass = "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 opacity-50";
-                      iconClass = "bg-slate-100 dark:bg-slate-700 text-slate-400";
-                    }
-                  } else if (isSelected) {
-                    buttonClass = "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 shadow-sm";
-                    iconClass = "bg-blue-600 text-white shadow-md shadow-blue-500/30";
-                  }
 
                   return (
-                  <button
-                    key={i}
-                    onClick={() => handleAnswer(i)}
-                    disabled={showInstantFeedback}
-                    className={cn(
-                      "w-full text-left p-4 sm:p-6 rounded-2xl border-2 transition-all flex items-start sm:items-center justify-between gap-4 group relative overflow-hidden",
-                      buttonClass
-                    )}
-                  >
-                    {isSelected && !showInstantFeedback && (
-                      <div className="absolute inset-0 bg-blue-600/5 dark:bg-blue-400/5" />
-                    )}
-                    <div className="flex items-start sm:items-center gap-4 relative z-10 flex-1 min-w-0">
-                      <div className={cn(
-                        "w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl flex items-center justify-center font-bold text-sm sm:text-base transition-colors mt-0.5 sm:mt-0",
-                        iconClass
-                      )}>
-                        {String.fromCharCode(65 + i)}
+                    <div key={q.id} className="relative">
+                      <div className="flex items-start justify-between gap-4 mb-6">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-4">
+                            <span className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center font-black text-sm shrink-0">
+                              {globalIdx + 1}
+                            </span>
+                            <span className={cn(
+                              "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider inline-block",
+                              q.difficulty === 'easy' ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600" :
+                              q.difficulty === 'medium' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600" :
+                              "bg-red-50 dark:bg-red-900/20 text-red-600"
+                            )}>
+                              {q.difficulty === 'easy' ? 'Easy' : q.difficulty === 'medium' ? 'Medium' : 'Hard'}
+                            </span>
+                          </div>
+                          
+                          <div className="prose dark:prose-invert max-w-none text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-relaxed break-words overflow-wrap-anywhere overflow-x-auto" dangerouslySetInnerHTML={{ __html: q.title }} />
+                          {/* Fallback image render if no grouping but image exists. Current logic handles it at group level, but safe to keep. */}
+                          {!currentGroupQuestions[0].imageUrl && q.imageUrl && (
+                            <img src={q.imageUrl} alt="Question" loading="lazy" className="mt-6 max-h-72 rounded-2xl object-contain border border-slate-100 dark:border-slate-800 shadow-sm" />
+                          )}
+                        </div>
+                        <button
+                          onClick={() => toggleFlag(globalIdx)}
+                          className={cn(
+                            "p-3 sm:p-4 rounded-2xl border-2 transition-all shrink-0 flex flex-col items-center gap-1 group",
+                            flaggedQuestions.has(globalIdx)
+                              ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500 text-amber-500 shadow-inner"
+                              : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:border-amber-300 hover:text-amber-500"
+                          )}
+                          title="Bookmark this question"
+                        >
+                          <Flag size={24} fill={flaggedQuestions.has(globalIdx) ? "currentColor" : "none"} className="group-hover:scale-110 transition-transform" />
+                          <span className="text-[9px] font-bold uppercase tracking-wider hidden sm:block">Bookmark</span>
+                        </button>
                       </div>
-                      <span className="text-base sm:text-lg font-medium break-words flex-1">{option}</span>
-                    </div>
-                    {isSelected && !showInstantFeedback && (
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
-                        <CheckCircle2 size={16} className="sm:w-5 sm:h-5" />
-                      </div>
-                    )}
-                    {showInstantFeedback && isCorrect && (
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
-                        <CheckCircle2 size={16} className="sm:w-5 sm:h-5" />
-                      </div>
-                    )}
-                    {showInstantFeedback && isSelected && !isCorrect && (
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-red-500 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
-                        <XCircle size={16} className="sm:w-5 sm:h-5" />
-                      </div>
-                    )}
-                  </button>
-                )})}
-              </div>
 
-              {feedbackMode === 'instant' && selectedAnswers[currentIdx] !== undefined && currentQuestion.explanation && (
-                <div className="mt-6 p-6 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
-                  <h4 className="font-bold text-blue-900 dark:text-blue-100 mb-2 flex items-center gap-2">
-                    <BookOpen size={18} />
-                    Explanation
-                  </h4>
-                  <div className="prose dark:prose-invert max-w-none text-sm text-blue-800 dark:text-blue-200 break-words overflow-wrap-anywhere overflow-x-auto" dangerouslySetInnerHTML={{ __html: currentQuestion.explanation }} />
-                </div>
-              )}
+                      <div className="grid grid-cols-1 gap-3 sm:gap-4">
+                        {q.options.map((option, i) => {
+                          const isSelected = selectedAnswers[globalIdx] === i;
+                          const isCorrect = i === q.correctAnswer;
+                          
+                          let buttonClass = "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-slate-50 dark:hover:bg-slate-800/80";
+                          let iconClass = "bg-slate-100 dark:bg-slate-700 text-slate-500 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 group-hover:text-blue-600 dark:group-hover:text-blue-400";
+                          
+                          if (showInstantFeedback) {
+                            if (isCorrect) {
+                              buttonClass = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-sm";
+                              iconClass = "bg-emerald-500 text-white shadow-md shadow-emerald-500/30";
+                            } else if (isSelected) {
+                              buttonClass = "bg-red-50 dark:bg-red-900/20 border-red-500 text-red-700 dark:text-red-400 shadow-sm";
+                              iconClass = "bg-red-500 text-white shadow-md shadow-red-500/30";
+                            } else {
+                              buttonClass = "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 opacity-50";
+                              iconClass = "bg-slate-100 dark:bg-slate-700 text-slate-400";
+                            }
+                          } else if (isSelected) {
+                            buttonClass = "bg-blue-50 dark:bg-blue-900/20 border-blue-600 text-blue-700 dark:text-blue-400 shadow-sm";
+                            iconClass = "bg-blue-600 text-white shadow-md shadow-blue-500/30";
+                          }
+
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                if (isFinished) return;
+                                if (feedbackMode === 'instant' && selectedAnswers[globalIdx] !== undefined) return;
+                                setSelectedAnswers(prev => ({ ...prev, [globalIdx]: i }));
+                              }}
+                              disabled={showInstantFeedback}
+                              className={cn(
+                                "w-full text-left p-4 sm:p-6 rounded-2xl border-2 transition-all flex items-start sm:items-center justify-between gap-4 group relative overflow-hidden",
+                                buttonClass
+                              )}
+                            >
+                              {isSelected && !showInstantFeedback && (
+                                <div className="absolute inset-0 bg-blue-600/5 dark:bg-blue-400/5" />
+                              )}
+                              <div className="flex items-start sm:items-center gap-4 relative z-10 flex-1 min-w-0">
+                                <div className={cn(
+                                  "w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl flex items-center justify-center font-bold text-sm sm:text-base transition-colors mt-0.5 sm:mt-0",
+                                  iconClass
+                                )}>
+                                  {String.fromCharCode(65 + i)}
+                                </div>
+                                <span className="text-base sm:text-lg font-medium break-words flex-1">{option}</span>
+                              </div>
+                              {isSelected && !showInstantFeedback && (
+                                <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
+                                  <CheckCircle2 size={16} className="sm:w-5 sm:h-5" />
+                                </div>
+                              )}
+                              {showInstantFeedback && isCorrect && (
+                                <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
+                                  <CheckCircle2 size={16} className="sm:w-5 sm:h-5" />
+                                </div>
+                              )}
+                              {showInstantFeedback && isSelected && !isCorrect && (
+                                <div className="w-6 h-6 sm:w-8 sm:h-8 shrink-0 bg-red-500 rounded-full flex items-center justify-center text-white shadow-sm relative z-10 animate-in zoom-in duration-200 mt-1 sm:mt-0">
+                                  <XCircle size={16} className="sm:w-5 sm:h-5" />
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {feedbackMode === 'instant' && isAnswered && q.explanation && (
+                        <div className="mt-6 p-6 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800 animate-in fade-in slide-in-from-top-4">
+                          <h4 className="font-bold text-blue-900 dark:text-blue-100 mb-2 flex items-center gap-2">
+                            <BookOpen size={18} />
+                            Explanation
+                          </h4>
+                          <div className="prose dark:prose-invert max-w-none text-sm text-blue-800 dark:text-blue-200 break-words overflow-wrap-anywhere overflow-x-auto" dangerouslySetInnerHTML={{ __html: q.explanation }} />
+                        </div>
+                      )}
+                      
+                      {groupOffset < currentGroupQuestions.length - 1 && (
+                        <hr className="my-10 border-slate-100 dark:border-slate-800" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Navigation */}
             <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
               <button
-                onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
-                disabled={currentIdx === 0}
+                onClick={() => setCurrentIdx(prevIdx)}
+                disabled={groupStartIdx === 0}
                 className="flex items-center gap-2 px-4 sm:px-6 py-3 rounded-xl font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-30 group"
               >
                 <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
@@ -988,7 +1078,7 @@ export default function Quiz() {
                 <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">Space</kbd> to next
               </div>
 
-              {currentIdx === questions.length - 1 ? (
+              {nextIdx >= questions.length ? (
                 <button
                   onClick={handleSubmit}
                   disabled={submitting || Object.keys(selectedAnswers).length < questions.length}
@@ -999,7 +1089,7 @@ export default function Quiz() {
                 </button>
               ) : (
                 <button
-                  onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
+                  onClick={() => setCurrentIdx(nextIdx)}
                   className="flex items-center gap-2 px-6 sm:px-8 py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5 group"
                 >
                   <span className="hidden sm:inline">Next Question</span>
@@ -1022,10 +1112,10 @@ export default function Quiz() {
               {questions.map((_, i) => (
                 <button
                   key={i}
-                  onClick={() => setCurrentIdx(i)}
+                  onClick={() => setCurrentIdx(getGroupStart(i))}
                   className={cn(
                     "aspect-square rounded-xl flex items-center justify-center text-xs font-bold transition-all relative",
-                    currentIdx === i 
+                    (i >= groupStartIdx && i < nextIdx)
                       ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-110 z-10" 
                       : flaggedQuestions.has(i)
                         ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 border border-amber-200 dark:border-amber-800"

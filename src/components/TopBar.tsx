@@ -58,8 +58,10 @@ export default function TopBar() {
                 {profile?.displayName?.charAt(0) || 'S'}
               </div>
               <div className="text-left hidden md:block">
-                <p className="text-sm font-black text-slate-900 dark:text-white leading-none group-hover:text-blue-600 transition-colors">{profile?.displayName}</p>
-                <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mt-1.5">Premium Student</p>
+                <p className="text-sm font-black text-slate-900 dark:text-white leading-none group-hover:text-blue-600 transition-colors">{profile?.displayName || 'User'}</p>
+                <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mt-1.5">
+                  {profile?.role === 'admin' ? 'Administrator' : profile?.role === 'owner' ? 'System Owner' : 'Medical Student'}
+                </p>
               </div>
             </div>
 

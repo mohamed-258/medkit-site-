@@ -41,7 +41,7 @@ export default function Home() {
             >
               <motion.div variants={itemVariants} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-sm font-bold mb-8 border border-blue-200/50 dark:border-blue-800/50 backdrop-blur-sm shadow-sm">
                 <Star size={16} className="fill-current" />
-                <span>The #1 Platform for Medical Students</span>
+                <span>The #1 Platform for Medical Students Only</span>
               </motion.div>
               
               <motion.h1 variants={itemVariants} className="text-5xl lg:text-7xl font-extrabold text-slate-900 dark:text-white mb-8 leading-[1.1] tracking-tight">
@@ -79,7 +79,7 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-                <p><span className="font-bold text-slate-900 dark:text-white">5,000+</span> students already joined</p>
+                <p><span className="font-bold text-slate-900 dark:text-white">5,000+</span> medical students already joined</p>
               </motion.div>
             </motion.div>
             
@@ -265,7 +265,7 @@ export default function Home() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-sm font-bold mb-8 border border-emerald-100 dark:border-emerald-800/50"
           >
             <CheckCircle2 size={16} />
-            <span>Join 5,000+ students today</span>
+            <span>Join 5,000+ medical students today</span>
           </motion.div>
           
           <motion.h2 

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../App';
+import { storage as firebaseStorage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { supabase } from '../supabase';
 import { handleSupabaseError, OperationType } from '../lib/supabase-errors';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
@@ -170,6 +172,8 @@ export default function Admin() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [selectedSectionId, setSelectedSectionId] = useState<string>('');
+  const [uploadSubjectId, setUploadSubjectId] = useState<string>('');
+  const [uploadSectionId, setUploadSectionId] = useState<string>('');
   const [questionSearchQuery, setQuestionSearchQuery] = useState<string>('');
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
@@ -572,8 +576,8 @@ export default function Admin() {
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedSubjectId) {
-      if (!selectedSubjectId) setMessage({ text: 'Please select a subject first', type: 'error' });
+    if (!file || !uploadSubjectId) {
+      if (!uploadSubjectId) setMessage({ text: 'Please select a subject first for upload', type: 'error' });
       return;
     }
 
@@ -603,8 +607,8 @@ export default function Admin() {
         
         const insertData = chunk.map((q) => ({
           id: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
-          subject_id: selectedSubjectId,
-          section_id: selectedSectionId || null,
+          subject_id: uploadSubjectId,
+          section_id: uploadSectionId || null,
           title: q.title,
           options: q.options,
           correct_answer: q.correctAnswer,
@@ -1766,18 +1770,16 @@ export default function Admin() {
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-end">
               <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-1">Target Subject</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-1">Upload To Subject</label>
                 <select 
-                  value={selectedSubjectId}
+                  value={uploadSubjectId}
                   onChange={(e) => {
-                    setSelectedSubjectId(e.target.value);
-                    setSelectedSectionId('');
-                    setSelectedQuestionIds(new Set());
-                    setQuestionsPage(1);
+                    setUploadSubjectId(e.target.value);
+                    setUploadSectionId('');
                   }}
                   className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold"
                 >
-                  <option value="">All Subjects</option>
+                  <option value="">Select Subject for Upload</option>
                   {subjects.map(s => (
                     <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>
                   ))}
@@ -1785,20 +1787,16 @@ export default function Admin() {
               </div>
 
               <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-1">Target Section</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] ml-1">Upload To Section (Optional)</label>
                 <select 
-                  value={selectedSectionId}
-                  onChange={(e) => {
-                    setSelectedSectionId(e.target.value);
-                    setSelectedQuestionIds(new Set());
-                    setQuestionsPage(1);
-                  }}
+                  value={uploadSectionId}
+                  onChange={(e) => setUploadSectionId(e.target.value)}
                   className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold disabled:opacity-50"
-                  disabled={!selectedSubjectId}
+                  disabled={!uploadSubjectId}
                 >
-                  <option value="">All Sections</option>
+                  <option value="">No specific section</option>
                   {sections
-                    .filter(s => s.subjectId === selectedSubjectId)
+                    .filter(s => s.subjectId === uploadSubjectId)
                     .map(s => (
                       <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>
                     ))
@@ -1817,7 +1815,7 @@ export default function Admin() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading || !selectedSubjectId}
+                  disabled={isUploading || !uploadSubjectId}
                   className={cn(
                     "w-full flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all",
                     isUploading 
@@ -1832,25 +1830,63 @@ export default function Admin() {
             </div>
           </div>
 
-          <div className="mb-6 relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Search size={20} className="text-slate-400" />
+          {/* Filters & Search */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <select 
+              value={selectedSubjectId}
+              onChange={(e) => {
+                setSelectedSubjectId(e.target.value);
+                setSelectedSectionId('');
+                setSelectedQuestionIds(new Set());
+                setQuestionsPage(1);
+              }}
+              className="w-full px-5 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold shadow-sm"
+            >
+              <option value="">All Subjects</option>
+              {subjects.map(s => (
+                <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>
+              ))}
+            </select>
+
+            <select 
+              value={selectedSectionId}
+              onChange={(e) => {
+                setSelectedSectionId(e.target.value);
+                setSelectedQuestionIds(new Set());
+                setQuestionsPage(1);
+              }}
+              className="w-full px-5 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-bold shadow-sm disabled:opacity-50"
+              disabled={!selectedSubjectId}
+            >
+              <option value="">All Sections</option>
+              {sections
+                .filter(s => s.subjectId === selectedSubjectId)
+                .map(s => (
+                  <option key={s.id} value={s.id}>{s.nameEn || s.nameAr}</option>
+                ))
+              }
+            </select>
+
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Search size={20} className="text-slate-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search within selection..."
+                value={questionSearchQuery}
+                onChange={(e) => setQuestionSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-10 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-medium shadow-sm"
+              />
+              {questionSearchQuery && (
+                <button
+                  onClick={() => setQuestionSearchQuery('')}
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              )}
             </div>
-            <input
-              type="text"
-              placeholder="Search questions by title, options, or explanation..."
-              value={questionSearchQuery}
-              onChange={(e) => setQuestionSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-slate-900 dark:text-white font-medium shadow-sm"
-            />
-            {questionSearchQuery && (
-              <button
-                onClick={() => setQuestionSearchQuery('')}
-                className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              >
-                <X size={16} />
-              </button>
-            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4">
@@ -1908,12 +1944,34 @@ export default function Admin() {
                       setShowQuestionForm(true);
                     }}
                     className="p-3 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
+                    title="Edit"
                   >
                     <Edit2 size={18} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setEditingQuestion(null);
+                      setQuestionForm({
+                        subjectId: q.subjectId,
+                        sectionId: q.sectionId,
+                        title: '',
+                        options: ['', '', '', ''],
+                        correctAnswer: 0,
+                        explanation: '',
+                        difficulty: q.difficulty,
+                        imageUrl: q.imageUrl // Keep the image for grouped question
+                      });
+                      setShowQuestionForm(true);
+                    }}
+                    className="p-3 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all"
+                    title="Add Linked Sub-Question (Same Image)"
+                  >
+                    <Plus size={18} />
                   </button>
                   <button
                     onClick={() => handleDelete('questions', q.id)}
                     className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
+                    title="Delete"
                   >
                     <Trash2 size={18} />
                   </button>
@@ -2194,20 +2252,22 @@ export default function Admin() {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           try {
-                            setMessage({ text: 'Uploading image...', type: 'success' });
-                            const fileName = `${Date.now()}_${file.name}`;
-                            const { data, error } = await supabase.storage
-                              .from('questions')
-                              .upload(fileName, file);
-                            if (error) throw error;
-                            const { data: { publicUrl } } = supabase.storage
-                              .from('questions')
-                              .getPublicUrl(fileName);
+                            setMessage({ text: 'Uploading image to Firebase...', type: 'success' });
+                            const fileName = `questions/${Date.now()}_${file.name}`;
+                            const storageRef = ref(firebaseStorage, fileName);
+                            
+                            await uploadBytes(storageRef, file);
+                            const publicUrl = await getDownloadURL(storageRef);
+                            
                             setQuestionForm({ ...questionForm, imageUrl: publicUrl });
                             setMessage({ text: 'Image uploaded!', type: 'success' });
-                          } catch (err) {
-                            console.error(err);
-                            setMessage({ text: 'Upload failed', type: 'error' });
+                          } catch (err: any) {
+                            console.error("Firebase Storage Upload Error:", err);
+                            if (err.code === 'storage/unauthorized') {
+                              setMessage({ text: 'Storage Error: Access denied. Please ensure your Firebase Storage rules allow uploads.', type: 'error' });
+                            } else {
+                              setMessage({ text: err.message || 'Upload failed', type: 'error' });
+                            }
                           }
                         };
                         input.click();

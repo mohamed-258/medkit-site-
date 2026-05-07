@@ -135,8 +135,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
     let finalDisplayName = data.display_name;
     if (data.first_name) {
       finalDisplayName = `${data.first_name} ${data.father_name || ''}`.trim();
-    } else if (!finalDisplayName || finalDisplayName === 'Student') {
-      finalDisplayName = data.email ? data.email.split('@')[0] : 'Student';
+    } else if (!finalDisplayName || finalDisplayName === 'Student' || finalDisplayName === 'User') {
+      finalDisplayName = data.email ? data.email.split('@')[0] : 'User';
     }
 
     return {
@@ -230,7 +230,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
           const newProfile = {
             uid: sessionUser.uid,
             email: sessionUser.email || '',
-            display_name: sessionUser.displayName || 'Student',
+            display_name: sessionUser.displayName || 'User',
             role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
             points: 0,
             completed_quizzes: 0,
@@ -492,7 +492,7 @@ function Footer() {
               <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Medkit</span>
             </div>
             <p className="text-slate-500 dark:text-slate-400 text-base leading-relaxed max-w-md">
-              A student team from the Faculty of Medicine, Minia University. We aim to provide the best educational experience for medical students by organizing and facilitating question solving and exams.
+              A specialized medical team from the Faculty of Medicine, Minia University. We aim to provide the best educational experience for medical students by organizing and facilitating question solving and exams.
             </p>
           </div>
           <div>
