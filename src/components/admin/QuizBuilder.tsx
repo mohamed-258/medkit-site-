@@ -42,14 +42,22 @@ export default function QuizBuilder({ subjects, sections, onClose }: QuizBuilder
 
   const loadExistingQuestions = async () => {
     try {
-      let query = supabase.from('questions').select('*').eq('subject_id', selectedSubject);
-      if (selectedSection) {
-        query = query.eq('section_id', selectedSection);
+      let allData: any[] = [];
+      let from = 0;
+      let step = 1000;
+      while (true) {
+        let query = supabase.from('questions').select('*').eq('subject_id', selectedSubject);
+        if (selectedSection) {
+          query = query.eq('section_id', selectedSection);
+        }
+        const { data, error } = await query.order('order', { ascending: true }).range(from, from + step - 1);
+        if (error) throw error;
+        if (data) allData.push(...data);
+        if (!data || data.length < step) break;
+        from += step;
       }
-      const { data, error } = await query.order('order', { ascending: true });
-      if (error) throw error;
 
-      const loadedQuestions = (data || []).map(doc => ({
+      const loadedQuestions = (allData || []).map(doc => ({
         id: doc.id,
         subjectId: doc.subject_id,
         sectionId: doc.section_id,

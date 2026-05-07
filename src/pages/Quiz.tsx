@@ -322,6 +322,20 @@ export default function Quiz() {
     try {
       let qList: Question[] = [];
       
+      const fetchAllByField = async (field: string, value: string) => {
+        let allData: any[] = [];
+        let from = 0;
+        let step = 1000;
+        while (true) {
+          const { data, error } = await supabase.from('questions').select('*').eq(field, value).range(from, from + step - 1);
+          if (error) throw error;
+          if (data) allData.push(...data);
+          if (!data || data.length < step) break;
+          from += step;
+        }
+        return allData;
+      };
+
       const mapQuestion = (doc: any): Question => ({
         id: doc.id,
         subjectId: doc.subject_id,
@@ -351,23 +365,29 @@ export default function Quiz() {
         });
 
         if (mistakeIds.size > 0) {
-          const { data: qData } = await supabase.from('questions').select('*').eq('subject_id', sId);
+          const qData = await fetchAllByField('subject_id', sId);
           let allQList = (qData || []).map(mapQuestion);
           qList = allQList.filter(q => mistakeIds.has(q.id));
         }
       } else if (sectionId) {
-        const subSections = sections.filter(s => s.parentId === sectionId);
-        if (subSections.length > 0) {
-          const sectionIds = [sectionId, ...subSections.map(s => s.id)];
-          const { data: qData } = await supabase.from('questions').select('*').eq('subject_id', sId);
+        const validSectionIds = new Set<string>();
+        const addSectionAndDescendants = (id: string) => {
+          validSectionIds.add(id);
+          sections.filter(s => s.parentId === id).forEach(s => addSectionAndDescendants(s.id));
+        };
+        addSectionAndDescendants(sectionId);
+        
+        if (validSectionIds.size > 1) {
+          const sectionIds = Array.from(validSectionIds);
+          const qData = await fetchAllByField('subject_id', sId);
           let allQList = (qData || []).map(mapQuestion);
           qList = allQList.filter(q => sectionIds.includes(q.sectionId || ''));
         } else {
-          const { data: qData } = await supabase.from('questions').select('*').eq('section_id', sectionId);
+          const qData = await fetchAllByField('section_id', sectionId);
           qList = (qData || []).map(mapQuestion);
         }
       } else {
-        const { data: qData } = await supabase.from('questions').select('*').eq('subject_id', sId);
+        const qData = await fetchAllByField('subject_id', sId);
         qList = (qData || []).map(mapQuestion);
       }
       

@@ -621,6 +621,7 @@ export default function Admin() {
         await supabase.from('questions').insert(insertData);
       }
 
+      await loadQuestions(); // Refresh local list
       setMessage({ text: `Successfully added ${parsedQuestions.length} questions!`, type: 'success' });
     } catch (err: any) {
       if (err instanceof Error && (err.message === 'No valid questions found in the file.' || err.message.includes('File type not supported'))) {
@@ -799,25 +800,45 @@ export default function Admin() {
     };
   }, []);
 
+  // Fetch questions
+  const loadQuestions = async () => {
+    setLoading(true);
+    try {
+      let allData: any[] = [];
+      let from = 0;
+      let step = 1000;
+      while (true) {
+        const { data, error } = await supabase.from('questions').select('*').range(from, from + step - 1);
+        if (error) throw error;
+        if (data) allData.push(...data);
+        if (!data || data.length < step) break;
+        from += step;
+      }
+      setQuestions((allData || []).map(doc => ({
+        id: doc.id,
+        subjectId: doc.subject_id,
+        sectionId: doc.section_id,
+        title: doc.title,
+        imageUrl: doc.image_url,
+        options: doc.options,
+        correctAnswer: doc.correct_answer,
+        explanation: doc.explanation,
+        difficulty: doc.difficulty,
+        order: doc.order,
+        createdAt: doc.created_at
+      } as Question)));
+    } catch (err) {
+      console.error("Error loading questions:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Fetch data when tab changes
   useEffect(() => {
     const fetchDataForTab = async () => {
-      if (activeTab === 'questions' && questions.length === 0) {
-        setLoading(true);
-        const { data: qData } = await supabase.from('questions').select('*').limit(1000);
-        setQuestions((qData || []).map(doc => ({
-          id: doc.id,
-          subjectId: doc.subject_id,
-          sectionId: doc.section_id,
-          title: doc.title,
-          imageUrl: doc.image_url,
-          options: doc.options,
-          correctAnswer: doc.correct_answer,
-          explanation: doc.explanation,
-          difficulty: doc.difficulty,
-          order: doc.order
-        } as Question)));
-        setLoading(false);
+      if (activeTab === 'questions') {
+        await loadQuestions();
       } else if (activeTab === 'users' && users.length === 0) {
         setLoading(true);
         const { data: uData } = await supabase.from('users').select('*');
@@ -1354,9 +1375,9 @@ export default function Admin() {
     if (questionSearchQuery) {
       const query = questionSearchQuery.toLowerCase();
       result = result.filter(q => {
-        const matchesTitle = q.title.toLowerCase().includes(query);
-        const matchesOptions = q.options.some(opt => opt.toLowerCase().includes(query));
-        const matchesExplanation = q.explanation.toLowerCase().includes(query);
+        const matchesTitle = q.title?.toLowerCase().includes(query) || false;
+        const matchesOptions = q.options?.some(opt => opt?.toLowerCase().includes(query)) || false;
+        const matchesExplanation = q.explanation?.toLowerCase().includes(query) || false;
         return matchesTitle || matchesOptions || matchesExplanation;
       });
     }
@@ -1367,7 +1388,15 @@ export default function Admin() {
         const subject = subjects.find(s => s.id === selectedSubjectId);
         if (subject && subject.id !== q.subjectId && (subject as any).manualId !== q.subjectId) return false;
       }
-      if (selectedSectionId && q.sectionId !== selectedSectionId) return false;
+      if (selectedSectionId) {
+        const validSectionIds = new Set<string>();
+        const addSectionAndDescendants = (id: string) => {
+          validSectionIds.add(id);
+          sections.filter(s => s.parentId === id).forEach(s => addSectionAndDescendants(s.id));
+        };
+        addSectionAndDescendants(selectedSectionId);
+        if (!q.sectionId || !validSectionIds.has(q.sectionId)) return false;
+      }
       return true;
     });
 
@@ -1376,7 +1405,7 @@ export default function Admin() {
       const dateB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : 0;
       return dateB - dateA;
     });
-  }, [questions, selectedSubjectId, selectedSectionId, subjects, questionSearchQuery]);
+  }, [questions, selectedSubjectId, selectedSectionId, subjects, questionSearchQuery, sections]);
 
   const paginatedQuestions = useMemo(() => {
     const start = (questionsPage - 1) * QUESTIONS_PER_PAGE;
