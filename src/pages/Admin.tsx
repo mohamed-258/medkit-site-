@@ -1956,7 +1956,7 @@ export default function Admin() {
                     {q.imageUrl && <img src={q.imageUrl} alt="Question" loading="lazy" className="h-20 rounded-lg mb-2 object-cover" />}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1">
                   <button 
                     onClick={() => {
                       setEditingQuestion(q);
