@@ -711,7 +711,7 @@ export default function Admin() {
         }).eq('uid', userId);
         
         // Update local state
-        setUsers(users.map(u => u.uid === userId ? { ...u, points: totalPoints, sectionPoints, completedQuizzes, totalQuestionsAnswered, totalCorrectAnswers } : u));
+        setUsers(prev => prev.map(u => u.uid === userId ? { ...u, points: totalPoints, sectionPoints, completedQuizzes, totalQuestionsAnswered, totalCorrectAnswers } : u));
         setMessage({ text: `Successfully refreshed points for user!`, type: 'success' });
       } else {
         setMessage({ text: `Points are already up to date.`, type: 'success' });
@@ -719,6 +719,94 @@ export default function Admin() {
     } catch (error) {
       console.error(error);
       setMessage({ text: 'Failed to refresh points.', type: 'error' });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const refreshAllUsersPoints = async () => {
+    if (!window.confirm('Are you sure you want to recalculate points for ALL users? This might take a while.')) return;
+    setLoading(true);
+    setMessage({ text: 'Recalculating all users points...', type: 'success' });
+    try {
+      // Get all users
+      const { data: allUsersData, error: usersError } = await supabase.from('users').select('*');
+      if (usersError || !allUsersData) throw new Error("Users not found");
+
+      // Get all quiz results
+      const { data: allResultsData, error: resultsError } = await supabase.from('quiz_results').select('*');
+      if (resultsError || !allResultsData) throw new Error("Quiz results not found");
+
+      // Build map of user results
+      const resultsByUser: Record<string, any[]> = {};
+      allResultsData.forEach(r => {
+        if (!resultsByUser[r.user_id]) resultsByUser[r.user_id] = [];
+        resultsByUser[r.user_id].push(r);
+      });
+
+      let updatedCount = 0;
+      const updatedUsersList = [...users];
+
+      for (const userData of allUsersData) {
+        const userResults = resultsByUser[userData.uid] || [];
+        
+        let totalPoints = 0;
+        let totalQuestionsAnswered = 0;
+        let totalCorrectAnswers = 0;
+        let sectionPoints: Record<string, number> = {};
+        let completedQuizzes = userResults.length;
+
+        if (userResults.length > 0) {
+          userResults.forEach(r => {
+            const sectionKey = r.section_id || `${r.subject_id}_all`;
+            const points = (r.score || 0);
+            totalQuestionsAnswered += (r.total_questions || 0);
+            totalCorrectAnswers += points;
+            if (!sectionPoints[sectionKey] || points > sectionPoints[sectionKey]) {
+              sectionPoints[sectionKey] = points;
+            }
+          });
+          totalPoints = Object.values(sectionPoints).reduce((acc, p) => acc + p, 0);
+        }
+
+        const hasChanged = 
+          userData.points !== totalPoints || 
+          userData.completed_quizzes !== completedQuizzes ||
+          userData.total_questions_answered !== totalQuestionsAnswered ||
+          userData.total_correct_answers !== totalCorrectAnswers ||
+          JSON.stringify(userData.section_points || {}) !== JSON.stringify(sectionPoints);
+
+        if (hasChanged) {
+          await supabase.from('users').update({
+            points: totalPoints,
+            section_points: sectionPoints,
+            completed_quizzes: completedQuizzes,
+            total_questions_answered: totalQuestionsAnswered,
+            total_correct_answers: totalCorrectAnswers
+          }).eq('uid', userData.uid);
+          
+          updatedCount++;
+          
+          const index = updatedUsersList.findIndex(u => u.uid === userData.uid);
+          if (index !== -1) {
+            updatedUsersList[index] = { 
+              ...updatedUsersList[index], 
+              points: totalPoints, 
+              sectionPoints, 
+              completedQuizzes, 
+              totalQuestionsAnswered, 
+              totalCorrectAnswers 
+            };
+          }
+        }
+      }
+      
+      setUsers(updatedUsersList);
+      setMessage({ text: `Recalculation complete. Updated ${updatedCount} users.`, type: 'success' });
+    } catch (error) {
+      console.error(error);
+      setMessage({ text: 'Failed to refresh all users points.', type: 'error' });
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(null), 3000);
@@ -1326,6 +1414,17 @@ export default function Admin() {
     }
   };
 
+  const handleDeleteSubjectResults = async (subjectId: string) => {
+    if (!window.confirm('Are you sure you want to delete all user results for this subject?')) return;
+    try {
+      await supabase.from('quiz_results').delete().eq('subject_id', subjectId);
+      setMessage({ text: 'Subject results deleted successfully', type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      setMessage({ text: 'Failed to delete results.', type: 'error' });
+    }
+  };
+
   // Removed handleMigrateFirebaseData to eliminate Firebase reads
 
   const handleBulkMoveToSection = async (sectionId: string) => {
@@ -1527,43 +1626,55 @@ export default function Admin() {
               
               return (
                 <div key={subject.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col group hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-none hover:-translate-y-1 transition-all duration-300">
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="flex items-center gap-5">
-                      <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform duration-300 shadow-inner">
+                  <div className="flex flex-col xl:flex-row xl:items-start justify-between mb-6 gap-4">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="w-14 h-14 shrink-0 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform duration-300 shadow-inner">
                         <BookOpen size={28} />
                       </div>
-                      <div>
-                        <h3 className="font-black text-slate-900 dark:text-white text-lg">{subject.nameEn || subject.nameAr}</h3>
-                        <p className="text-sm font-bold text-slate-400 mt-0.5">{subject.nameAr}</p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-black text-slate-900 dark:text-white text-lg line-clamp-2" title={subject.nameEn || subject.nameAr}>{subject.nameEn || subject.nameAr}</h3>
+                        {subject.nameAr && subject.nameEn !== subject.nameAr && (
+                          <p className="text-sm font-bold text-slate-400 mt-0.5 truncate" title={subject.nameAr}>{subject.nameAr}</p>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0 bg-slate-50/50 dark:bg-slate-800/30 p-1.5 rounded-2xl self-start">
                       <button
                         onClick={() => {
                           setEditingSubject(subject);
                           setSubjectForm({ nameAr: subject.nameAr, nameEn: subject.nameEn, icon: subject.icon || 'BookOpen' });
                           setShowSubjectForm(true);
                         }}
-                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all shadow-sm"
+                        title="Edit Subject"
                       >
-                        <Edit2 size={18} />
+                        <Edit2 size={16} />
                       </button>
                       <button
                         onClick={() => toggleLock(subject)}
                         className={cn(
-                          "p-2 rounded-xl transition-all",
+                          "p-2 rounded-xl transition-all shadow-sm",
                           subject.isLocked 
-                            ? "bg-amber-50 text-amber-500 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400" 
-                            : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            ? "bg-white dark:bg-slate-800 text-amber-500 hover:text-amber-600" 
+                            : "text-slate-400 hover:text-blue-600 hover:bg-white dark:hover:bg-slate-800"
                         )}
+                        title={subject.isLocked ? "Unlock Subject" : "Lock Subject"}
                       >
-                        {subject.isLocked ? <Lock size={18} /> : <Unlock size={18} />}
+                        {subject.isLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSubjectResults(subject.id)}
+                        title="Delete All Results for this Subject"
+                        className="p-2 text-slate-400 hover:text-amber-500 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all shadow-sm"
+                      >
+                        <RefreshCw size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete('subjects', subject.id)}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
+                        title="Delete Subject"
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all shadow-sm"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>
@@ -1707,6 +1818,7 @@ export default function Admin() {
             onUpdateAllowedDevices={updateAllowedDevices}
             onClearDevices={clearRegisteredDevices}
             onRefreshPoints={refreshUserPoints}
+            onRefreshAllPoints={refreshAllUsersPoints}
           />
         </div>
       ) : (

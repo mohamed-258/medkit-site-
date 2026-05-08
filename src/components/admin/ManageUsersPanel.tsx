@@ -50,6 +50,7 @@ interface ManageUsersPanelProps {
   onUpdateAllowedDevices: (user: UserProfile, count: number) => Promise<void>;
   onClearDevices: (user: UserProfile) => Promise<void>;
   onRefreshPoints: (userId: string) => Promise<void>;
+  onRefreshAllPoints: () => Promise<void>;
 }
 
 // --- Utility ---
@@ -76,11 +77,13 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
   onToggleSubjectAccess,
   onUpdateAllowedDevices,
   onClearDevices,
-  onRefreshPoints
+  onRefreshPoints,
+  onRefreshAllPoints
 }) => {
   const [search, setSearch] = useState('');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
 
   // De-duplicate users by email and filter by search
   const filteredUsers = useMemo(() => {
@@ -118,6 +121,15 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
     }
   };
 
+  const handleRefreshAll = async () => {
+    setIsRefreshingAll(true);
+    try {
+      await onRefreshAllPoints();
+    } finally {
+      setIsRefreshingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header Section */}
@@ -129,15 +141,25 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
           </p>
         </div>
         
-        <div className="relative w-full md:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm"
-          />
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <button
+            onClick={handleRefreshAll}
+            disabled={isRefreshingAll || loading}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={cn(isRefreshingAll && "animate-spin")} />
+            <span className="hidden sm:inline">Refresh All</span>
+          </button>
+          <div className="relative flex-1 md:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm"
+            />
+          </div>
         </div>
       </div>
 
