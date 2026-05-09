@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, ReactNode, lazy, Suspense } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabase';
 import { auth, googleProvider } from './firebase';
@@ -124,12 +124,17 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const getDeviceId = () => {
-    let deviceId = localStorage.getItem('device_id');
-    if (!deviceId) {
-      deviceId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-      localStorage.setItem('device_id', deviceId);
+    try {
+      let deviceId = localStorage.getItem('device_id');
+      if (!deviceId) {
+        deviceId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('device_id', deviceId);
+      }
+      return deviceId;
+    } catch (e) {
+      console.warn("LocalStorage is not accessible. Device registration may be unreliable.");
+      return "temp_device_" + Math.random().toString(36).substring(2, 7);
     }
-    return deviceId;
   };
 
   const mapUserToProfile = (data: any): UserProfile => {
@@ -160,8 +165,99 @@ function AuthProvider({ children }: { children: ReactNode }) {
     };
   };
 
+  const userRef = useRef<any>(null);
+  const profileRef = useRef<UserProfile | null>(null);
+
   useEffect(() => {
-    let subscription: any;
+    userRef.current = user;
+    profileRef.current = profile;
+  }, [user, profile]);
+
+  const fetchProfile = async (sessionUser: any) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('uid', sessionUser.uid)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        // If it's a network error and we already have a profile, don't block the app
+        if (error.message.includes('Failed to fetch') && profileRef.current) {
+          console.warn("Network error while refreshing profile, keeping current profile.");
+          return;
+        }
+        throw error;
+      }
+
+      if (data) {
+        let mappedData = mapUserToProfile(data);
+
+        // Auto-upgrade owner by email
+        if (sessionUser.email === 'mhsn68503@gmail.com' && mappedData.role !== 'owner') {
+          await supabase.from('users').update({ role: 'owner' }).eq('uid', sessionUser.uid);
+          mappedData.role = 'owner';
+        }
+
+        // Device restriction check - only for student role
+        if (sessionUser.email !== 'mhsn68503@gmail.com' && mappedData.role !== 'owner' && mappedData.role !== 'admin') {
+          const deviceId = getDeviceId();
+          const allowed = mappedData.allowedDevices || 1;
+          const registered = mappedData.registeredDevices || [];
+
+          if (!registered.includes(deviceId)) {
+            if (registered.length < allowed) {
+              const newRegistered = [...registered, deviceId];
+              await supabase.from('users').update({ registered_devices: newRegistered }).eq('uid', sessionUser.uid);
+              mappedData.registeredDevices = newRegistered;
+            } else {
+              setAuthError('عذراً، هذا الحساب مسجل على الحد الأقصى من الأجهزة المسموح بها. يرجى التواصل مع الإدارة.');
+              await signOut(auth);
+              setProfile(null);
+              setUser(null);
+              setLoading(false);
+              return;
+            }
+          }
+        }
+
+        setAuthError(null);
+        setProfile(mappedData);
+      } else {
+        // Create new profile if not exists
+        const deviceId = getDeviceId();
+        const newProfile = {
+          uid: sessionUser.uid,
+          email: sessionUser.email || '',
+          display_name: sessionUser.displayName || 'User',
+          role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
+          points: 0,
+          completed_quizzes: 0,
+          allowed_devices: 1,
+          registered_devices: [deviceId],
+          created_at: new Date().toISOString(),
+        };
+        
+        const { error: upsertError } = await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
+        if (upsertError) {
+           console.error("Error creating profile:", upsertError);
+        }
+        setProfile(mapUserToProfile(newProfile));
+      }
+
+    } catch (err: any) {
+      console.error("Error fetching profile:", err);
+      if (err.message?.includes('Failed to fetch') && profileRef.current) {
+         return; 
+      }
+      setAuthError(err.message || "حدث خطأ أثناء جلب بيانات المستخدم. يرجى المحاولة لاحقاً.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let profileSubscription: any;
 
     const testConnection = async () => {
       try {
@@ -169,14 +265,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
         const result = await testSupabaseConnection();
         if (!result.ok) {
           console.error("Supabase Connection Critical Error:", result.error);
-          // If it's a fetch error, it might be a network issue or wrong URL
-          if (result.error?.includes('Failed to fetch')) {
-            console.warn("Network Error: Please check if your internet connection is stable and if the Supabase URL is correct.");
-          }
-        } else if (result.warning) {
-          console.warn("Supabase Connection Warning:", result.warning);
-        } else {
-          console.log("Supabase Connection Test Successful");
         }
       } catch (e) {
         console.error("Failed to import or test Supabase connection", e);
@@ -185,97 +273,48 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     testConnection();
 
-    const fetchProfile = async (sessionUser: any) => {
-      try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('uid', sessionUser.uid)
-          .single();
-
-        if (error && error.code !== 'PGRST116') throw error;
-
-        if (data) {
-          let mappedData = mapUserToProfile(data);
-
-          if (sessionUser.email === 'mhsn68503@gmail.com' && mappedData.role !== 'owner') {
-            await supabase.from('users').update({ role: 'owner' }).eq('uid', sessionUser.uid);
-            mappedData.role = 'owner';
-          }
-
-          if (sessionUser.email !== 'mhsn68503@gmail.com') {
-            const deviceId = getDeviceId();
-            const allowed = mappedData.allowedDevices || 1;
-            const registered = mappedData.registeredDevices || [];
-
-            if (!registered.includes(deviceId)) {
-              if (registered.length < allowed) {
-                const newRegistered = [...registered, deviceId];
-                await supabase.from('users').update({ registered_devices: newRegistered }).eq('uid', sessionUser.uid);
-                mappedData.registeredDevices = newRegistered;
-              } else {
-                setAuthError('عذراً، هذا الحساب مسجل على الحد الأقصى من الأجهزة المسموح بها. يرجى التواصل مع الإدارة.');
-                await signOut(auth);
-                setProfile(null);
-                setUser(null);
-                setLoading(false);
-                return;
-              }
-            }
-          }
-
-          setAuthError(null);
-          setProfile(mappedData);
-        } else {
-          const deviceId = getDeviceId();
-          const newProfile = {
-            uid: sessionUser.uid,
-            email: sessionUser.email || '',
-            display_name: sessionUser.displayName || 'User',
-            role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
-            points: 0,
-            completed_quizzes: 0,
-            allowed_devices: 1,
-            registered_devices: [deviceId],
-            created_at: new Date().toISOString(),
-          };
-          await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
-          setProfile(mapUserToProfile(newProfile));
-        }
-
-        // Setup realtime subscription
-        if (subscription) {
-          supabase.removeChannel(subscription);
-        }
-        subscription = supabase.channel(`public:users:uid=eq.${sessionUser.uid}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `uid=eq.${sessionUser.uid}` }, payload => {
-            setProfile(mapUserToProfile(payload.new));
-          })
-          .subscribe();
-
-      } catch (err: any) {
-        console.error("Error fetching profile:", err);
-        setAuthError(err.message || "حدث خطأ أثناء جلب بيانات المستخدم. يرجى المحاولة لاحقاً.");
-      } finally {
-        setLoading(false);
+    // Cleanup function for subscription
+    const cleanupSubscription = () => {
+      if (profileSubscription) {
+        supabase.removeChannel(profileSubscription);
+        profileSubscription = null;
       }
     };
 
     const unsubscribe = onAuthStateChanged(auth, (sessionUser) => {
+      console.log("Auth State Transition:", sessionUser ? "User Logged In" : "User Logged Out");
       if (sessionUser) {
-        setUser(sessionUser);
-        fetchProfile(sessionUser);
+        const isSameUser = userRef.current?.uid === sessionUser.uid;
+        const hasProfile = !!profileRef.current;
+        
+        if (!isSameUser || !hasProfile) {
+          setUser(sessionUser);
+          fetchProfile(sessionUser);
+        } else {
+          setUser(sessionUser);
+        }
+
+        // Setup/Refresh realtime subscription
+        cleanupSubscription();
+        profileSubscription = supabase.channel(`public:users:uid=eq.${sessionUser.uid}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `uid=eq.${sessionUser.uid}` }, payload => {
+            if (payload.new) {
+              setProfile(mapUserToProfile(payload.new));
+            }
+          })
+          .subscribe();
       } else {
         setUser(null);
         setProfile(null);
         setLoading(false);
-        if (subscription) supabase.removeChannel(subscription);
+        setAuthError(null);
+        cleanupSubscription();
       }
     });
 
     return () => {
       unsubscribe();
-      if (subscription) supabase.removeChannel(subscription);
+      cleanupSubscription();
     };
   }, []);
 
