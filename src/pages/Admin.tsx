@@ -1386,6 +1386,7 @@ export default function Admin() {
   const toggleLock = async (subject: Subject) => {
     try {
       await supabase.from('subjects').update({ is_locked: !subject.isLocked }).eq('id', subject.id);
+      setSubjects(prev => prev.map(s => s.id === subject.id ? { ...s, isLocked: !s.isLocked } : s));
       setMessage({ text: `Subject ${!subject.isLocked ? 'locked' : 'unlocked'} successfully`, type: 'success' });
     } catch (err: any) {
       console.error(err);
