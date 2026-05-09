@@ -15,7 +15,7 @@ import SubjectCard from '../components/SubjectCard';
 import StudentAnalytics from '../components/student/StudentAnalytics';
 
 export default function Dashboard() {
-  const { profile } = useAuth();
+  const { profile, reloadProfile } = useAuth();
   const location = useLocation();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [recentResults, setRecentResults] = useState<QuizResult[]>([]);
@@ -113,6 +113,18 @@ export default function Dashboard() {
 
     loadData();
 
+    // Listen to Supabase Broadcasts for immediate sync across devices
+    const broadcastChannel = supabase.channel('medkit_broadcast')
+      .on('broadcast', { event: 'subjects_updated' }, () => {
+        fetchSubjects();
+      })
+      .on('broadcast', { event: 'user_permissions_updated' }, (payload) => {
+        if (payload.payload?.uid === profile?.uid && reloadProfile) {
+          reloadProfile();
+        }
+      })
+      .subscribe();
+
     const subjectsChannel = supabase
       .channel('public:subjects_dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, () => {
@@ -121,9 +133,10 @@ export default function Dashboard() {
       .subscribe();
 
     return () => {
+      supabase.removeChannel(broadcastChannel);
       supabase.removeChannel(subjectsChannel);
     };
-  }, [profile?.uid]);
+  }, [profile?.uid, reloadProfile]);
 
   // Duplicate handleDeleteResult removed
 

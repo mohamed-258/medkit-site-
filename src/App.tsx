@@ -90,6 +90,7 @@ interface AuthContextType {
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => Promise<void>;
   logout: () => Promise<void>;
+  reloadProfile?: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -321,6 +322,19 @@ function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const reloadProfile = async () => {
+    if (user) {
+      try {
+        const { data, error } = await supabase.from('users').select('*').eq('uid', user.uid).single();
+        if (data && !error) {
+           setProfile(mapUserToProfile(data));
+        }
+      } catch (err) {
+        console.error("Error reloading profile:", err);
+      }
+    }
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
@@ -354,7 +368,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <ErrorBoundary>
-      <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout }}>
+      <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}>
         {children}
       </AuthContext.Provider>
     </ErrorBoundary>

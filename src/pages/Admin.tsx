@@ -985,6 +985,7 @@ export default function Admin() {
       setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, allowedSubjects: newAllowedSubjects } : u));
       
       setMessage({ text: 'Permissions updated successfully', type: 'success' });
+      supabase.channel('medkit_broadcast').send({ type: 'broadcast', event: 'user_permissions_updated', payload: { uid: user.uid } });
     } catch (error: any) {
       console.error(error);
       setMessage({ text: 'Database error occurred.', type: 'error' });
@@ -1388,6 +1389,7 @@ export default function Admin() {
       await supabase.from('subjects').update({ is_locked: !subject.isLocked }).eq('id', subject.id);
       setSubjects(prev => prev.map(s => s.id === subject.id ? { ...s, isLocked: !s.isLocked } : s));
       setMessage({ text: `Subject ${!subject.isLocked ? 'locked' : 'unlocked'} successfully`, type: 'success' });
+      supabase.channel('medkit_broadcast').send({ type: 'broadcast', event: 'subjects_updated', payload: {} });
     } catch (err: any) {
       console.error(err);
       setMessage({ text: 'Database error occurred.', type: 'error' });
