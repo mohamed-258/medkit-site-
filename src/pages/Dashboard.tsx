@@ -112,6 +112,17 @@ export default function Dashboard() {
     };
 
     loadData();
+
+    const subjectsChannel = supabase
+      .channel('public:subjects_dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, () => {
+        fetchSubjects();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subjectsChannel);
+    };
   }, [profile?.uid]);
 
   // Duplicate handleDeleteResult removed
