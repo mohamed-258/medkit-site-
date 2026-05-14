@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Bell, Plus, Menu, X, ShieldCheck, LayoutDashboard, BookOpen, Trophy, Activity, User, LogOut } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../App';
+import NotificationsDropdown from './NotificationsDropdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -65,10 +66,7 @@ export default function TopBar() {
               </div>
             </div>
 
-            <button className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors relative group">
-              <Bell size={20} className="group-hover:rotate-12 transition-transform" />
-              <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>
-            </button>
+            <NotificationsDropdown />
           </div>
 
           <Link to="/" className="flex items-center gap-3 group ml-2">
