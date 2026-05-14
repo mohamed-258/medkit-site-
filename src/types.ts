@@ -51,6 +51,14 @@ export interface Question {
   createdAt?: string;
 }
 
+export interface Notification {
+  id: string;
+  message: string;
+  type: 'info' | 'warning' | 'success';
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface QuizResult {
   id: string;
   userId: string;

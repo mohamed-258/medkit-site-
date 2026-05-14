@@ -70,8 +70,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return this.props.children;
   }
 }
-import { UserProfile } from './types';
-import { LogOut, LayoutDashboard, BookOpen, Trophy, Settings, Menu, X, Moon, Sun, Home as HomeIcon, LogIn, UserPlus, ShieldCheck } from 'lucide-react';
+import { UserProfile, Notification } from './types';
+import { LogOut, LayoutDashboard, BookOpen, Trophy, Settings, Menu, X, Moon, Sun, Home as HomeIcon, LogIn, UserPlus, ShieldCheck, Bell } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -445,6 +445,52 @@ function Navbar() {
     return false;
   });
 
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          if (error.code !== '42P01') console.error("Error fetching notifications:", error);
+          return;
+        }
+
+        const dismissed = JSON.parse(localStorage.getItem('dismissed_notifications') || '[]');
+        const activeAlerts = (data as Notification[]).filter(n => !dismissed.includes(n.id));
+        setNotifications(activeAlerts);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchNotifications();
+
+    const channel = supabase.channel('public:notifications')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
+    return () => {
+       supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const dismissNotification = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const dismissed = JSON.parse(localStorage.getItem('dismissed_notifications') || '[]');
+    dismissed.push(id);
+    localStorage.setItem('dismissed_notifications', JSON.stringify(dismissed));
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
   useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
@@ -490,6 +536,43 @@ function Navbar() {
             <button onClick={() => setIsDark(!isDark)} className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors">
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
+
+            {user && (
+              <div className="relative">
+                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors relative">
+                  <Bell size={20} />
+                  {notifications.length > 0 && (
+                     <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                  )}
+                </button>
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+                     <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                        <h3 className="font-bold text-slate-900 dark:text-white">الإشعارات / Notifications</h3>
+                     </div>
+                     <div className="max-h-96 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                           <div className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">لا توجد إشعارات جديدة</div>
+                        ) : (
+                           notifications.map(n => (
+                              <div key={n.id} className="p-4 border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                 <div className="flex justify-between items-start gap-4 flex-row-reverse">
+                                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap text-right w-full" dir="auto">{n.message}</p>
+                                    <button onClick={(e) => dismissNotification(n.id, e)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0">
+                                       <X size={16} />
+                                    </button>
+                                 </div>
+                                 <div className="text-[10px] text-slate-400 mt-2 text-right">
+                                    {new Date(n.created_at).toLocaleDateString('ar-EG')}
+                                 </div>
+                              </div>
+                           ))
+                        )}
+                     </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {user && (
               <div className="hidden md:flex items-center gap-3 pl-2 border-l border-slate-100 dark:border-slate-800">

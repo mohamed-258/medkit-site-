@@ -5,7 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { supabase } from '../supabase';
 import { handleSupabaseError, OperationType } from '../lib/supabase-errors';
 import { Subject, Section, Question, UserProfile, QuizResult } from '../types';
-import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2, MonitorSmartphone, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, LayoutGrid, ChevronDown, ChevronUp, Search, Filter, AlertCircle, CheckCircle2, FileUp, Loader2, Lock, Unlock, RefreshCw, Wand2, MonitorSmartphone, Image as ImageIcon, Bell, Send } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -32,6 +32,180 @@ import { CSS } from '@dnd-kit/utilities';
 import AdminAnalytics from '../components/admin/AdminAnalytics';
 
 import ManageUsersPanel from '../components/admin/ManageUsersPanel';
+
+// --- System Notifications UI ---
+function ManageNotifications() {
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newMessage, setNewMessage] = useState('');
+
+  const fetchNotifications = async () => {
+    setLoading(true);
+    try {
+      const { data, error: err } = await supabase.from('notifications').select('*').order('created_at', { ascending: false });
+      if (err) {
+        if (err.code === '42P01') {
+           setError('Table "notifications" does not exist. Please run the SQL setup script.');
+           setLoading(false);
+           return;
+        }
+        throw err;
+      }
+      setNotifications(data || []);
+      setError(null);
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const addNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+    try {
+      const { error: err } = await supabase.from('notifications').insert({
+        message: newMessage,
+        type: 'info',
+        is_active: true
+      });
+      if (err) throw err;
+      setNewMessage('');
+      fetchNotifications();
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  const toggleActive = async (id: string, current: boolean) => {
+    try {
+      await supabase.from('notifications').update({ is_active: !current }).eq('id', id);
+      fetchNotifications();
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    try {
+      await supabase.from('notifications').delete().eq('id', id);
+      fetchNotifications();
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-slate-500">جاري التحميل...</div>;
+
+  if (error && error.includes('does not exist')) {
+    return (
+      <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-100 dark:border-red-800 animate-in fade-in zoom-in-95 duration-500 mt-8">
+         <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-2"><AlertCircle /> يجب إنشاء جدول الإشعارات أولاً</h2>
+         <p className="text-slate-700 dark:text-slate-300 mb-4">يرجى تشغيل الكود التالي في محرر SQL في Supabase لإنشاء الجدول الخاص بالإشعارات، حتى تتمكن من إرسال إشعارات عامة لجميع المستخدمين:</p>
+         <pre className="bg-slate-900 text-green-400 p-4 rounded-xl overflow-x-auto text-left text-sm" dir="ltr">
+{`CREATE TABLE notifications (
+  id uuid default gen_random_uuid() primary key,
+  message text not null,
+  type text default 'info',
+  is_active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow read access for all" ON notifications FOR SELECT USING (true);
+CREATE POLICY "Allow all access for admins" ON notifications FOR ALL USING (true);
+
+-- تفعيل التحديثات المباشرة (Realtime) لجدول الإشعارات
+alter publication supabase_realtime add table notifications;`}
+         </pre>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500 mt-8">
+      <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-800">
+         <div className="flex items-center gap-4 mb-6">
+            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400">
+               <Send size={24} />
+            </div>
+            <div>
+               <h3 className="text-xl font-black text-slate-900 dark:text-white">إرسال إشعار جديد</h3>
+               <p className="text-sm font-medium text-slate-500">سيظهر هذا الإشعار لجميع المستخدمين في النظام</p>
+            </div>
+         </div>
+         <form onSubmit={addNotification} className="space-y-4">
+            <textarea
+               value={newMessage}
+               onChange={e => setNewMessage(e.target.value)}
+               placeholder="اكتب رسالة الإشعار هنا..."
+               className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all text-slate-900 dark:text-white font-medium resize-y min-h-[120px]"
+               dir="auto"
+               required
+            />
+            <div className="flex justify-end">
+               <button 
+                  type="submit" 
+                  disabled={!newMessage.trim()}
+                  className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black shadow-xl shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+               >
+                  <Send size={18} /> إرسال الإشعار
+               </button>
+             </div>
+         </form>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-800 overflow-hidden">
+         <div className="p-6 md:p-8 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+            <h3 className="text-lg font-black text-slate-900 dark:text-white">سجل الإشعارات</h3>
+         </div>
+         <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {notifications.length === 0 ? (
+               <div className="p-12 text-center text-slate-500 font-medium">لا توجد إشعارات سابقة</div>
+            ) : notifications.map(n => (
+               <div key={n.id} className="p-6 flex flex-col md:flex-row gap-6 md:items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <div className="flex items-start gap-4 flex-1">
+                     <div className={cn(
+                        "w-2 h-2 rounded-full mt-2 shrink-0 transform transition-all",
+                        n.is_active ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)] scale-110" : "bg-slate-300 dark:bg-slate-600"
+                     )} />
+                     <div className="space-y-1 w-full text-right" dir="auto">
+                        <p className={cn("text-slate-800 dark:text-slate-200 font-medium whitespace-pre-wrap leading-relaxed max-w-3xl", !n.is_active && "opacity-60")}>{n.message}</p>
+                        <p className="text-xs font-bold text-slate-400 capitalize">{new Date(n.created_at).toLocaleString('ar-EG')}</p>
+                     </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                     <button
+                        onClick={() => toggleActive(n.id, n.is_active)}
+                        className={cn(
+                           "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all w-28",
+                           n.is_active 
+                              ? "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700" 
+                              : "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50"
+                        )}
+                     >
+                        {n.is_active ? 'تعطيل' : 'تفعيل'}
+                     </button>
+                     <button
+                        onClick={() => deleteNotification(n.id)}
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all"
+                     >
+                        <Trash2 size={20} />
+                     </button>
+                  </div>
+               </div>
+            ))}
+         </div>
+      </div>
+    </div>
+  );
+}
 
 const QuizBuilder = lazy(() => import('../components/admin/QuizBuilder'));
 
@@ -160,7 +334,7 @@ function SortableSubSection({ sub, subQuestions, onEdit, onDelete }: { sub: Sect
 
 export default function Admin() {
   const { profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'analytics'>('subjects');
+  const [activeTab, setActiveTab] = useState<'subjects' | 'sections' | 'questions' | 'users' | 'analytics' | 'notifications'>('subjects');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -1548,7 +1722,8 @@ export default function Admin() {
               { id: 'subjects', label: 'Subjects' },
               { id: 'sections', label: 'Sections' },
               { id: 'questions', label: 'Questions' },
-              { id: 'users', label: 'Users' }
+              { id: 'users', label: 'Users' },
+              { id: 'notifications', label: 'Notifications' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1824,6 +1999,8 @@ export default function Admin() {
             onRefreshAllPoints={refreshAllUsersPoints}
           />
         </div>
+      ) : activeTab === 'notifications' ? (
+        <ManageNotifications />
       ) : (
         <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
