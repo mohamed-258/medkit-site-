@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, createContext, useContext, ReactNode, lazy
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabase';
 import { auth, googleProvider } from './firebase';
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { handleSupabaseError, OperationType } from './lib/supabase-errors';
 
 // Error Boundary Component
@@ -273,6 +273,16 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     testConnection();
 
+    // Check for redirect errors
+    getRedirectResult(auth).catch((err) => {
+      console.error("Redirect login error:", err);
+      if (err.code === 'auth/unauthorized-domain') {
+         setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته.');
+      } else {
+         setAuthError('حدث خطأ أثناء تسجيل الدخول عبر Google. حاول مرة أخرى.');
+      }
+    });
+
     // Cleanup function for subscription
     const cleanupSubscription = () => {
       if (profileSubscription) {
@@ -320,7 +330,16 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const isIframe = window !== window.parent;
+      
+      if (isMobile && !isIframe) {
+         // Mobile standalone (not in AI Studio iframe) prefers redirect to avoid popup blockers
+         await signInWithRedirect(auth, googleProvider);
+      } else {
+         // Desktop or iframe prefers popup
+         await signInWithPopup(auth, googleProvider);
+      }
     } catch (err) {
       console.error("Google login error:", err);
       throw err;
