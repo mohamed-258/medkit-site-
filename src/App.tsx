@@ -13,7 +13,7 @@ import { auth, googleProvider } from './firebase';
 import {
   signInWithPopup, signInWithRedirect, getRedirectResult,
   signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signOut, onAuthStateChanged,
+  signOut, onAuthStateChanged, sendEmailVerification,
 } from 'firebase/auth';
 
 import { UserProfile } from './types';
@@ -306,14 +306,19 @@ function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
-      console.error('Google sign-in error:', err);
-      // Try to re-throw with context if it's an internal error
-      if (err.code === 'auth/internal-error') {
-        const customErr = new Error('حدث خطأ داخلي (غالباً بسبب قيود المتصفح). يُرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab).');
-        (customErr as any).code = err.code;
-        throw customErr;
+      console.error('Google sign-in popup error:', err);
+      // Fallback to redirect if popup fails due to being blocked or internal errors in iframe
+      if (
+        err.code === 'auth/popup-blocked' ||
+        err.code === 'auth/popup-closed-by-user' ||
+        err.code === 'auth/cancelled-popup-request' ||
+        err.code === 'auth/internal-error'
+      ) {
+        console.log('Falling back to signInWithRedirect...');
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        throw err;
       }
-      throw err;
     }
   };
 
@@ -339,6 +344,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { user: authUser } = await createUserWithEmailAndPassword(auth, email, pass);
       if (authUser) {
+        await sendEmailVerification(authUser);
         const newRow = {
           uid:          authUser.uid,
           email:        authUser.email || '',
