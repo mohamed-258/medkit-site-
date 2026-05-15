@@ -125,25 +125,15 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   const getDeviceId = () => {
     try {
-      let deviceId = localStorage.getItem('device_id');
-      if (!deviceId) {
-        deviceId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('device_id', deviceId);
-      }
-      return deviceId;
-    } catch (e) {
-      console.warn("LocalStorage is not accessible. Using device fingerprint fallback.");
       const nav = window.navigator as any;
       const screen = window.screen;
       
-      // Extract stable OS and Browser without version numbers
       const osMatch = nav.userAgent?.match(/(Windows|Macintosh|Linux|iPhone|iPad|iPod|Android)/i) || ['UnknownOS'];
       const browserMatch = nav.userAgent?.match(/(Chrome|Safari|Firefox|Edge|Opera)/i) || ['UnknownBrowser'];
-      // Handle the case where Chrome on iOS says CriOS
       const isIOSChrome = nav.userAgent?.includes('CriOS') ? 'Chrome' : '';
       const stableBrowser = isIOSChrome || browserMatch[0];
 
-      const str = [
+      const fingerprintStr = [
         osMatch[0],
         stableBrowser,
         nav.language,
@@ -154,12 +144,26 @@ function AuthProvider({ children }: { children: ReactNode }) {
       ].join('||');
       
       let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-          const char = str.charCodeAt(i);
+      for (let i = 0; i < fingerprintStr.length; i++) {
+          const char = fingerprintStr.charCodeAt(i);
           hash = ((hash << 5) - hash) + char;
           hash = hash & hash;
       }
-      return "fp_" + Math.abs(hash).toString(16);
+      const stableFingerprint = "fp_" + Math.abs(hash).toString(16);
+
+      let deviceId = localStorage.getItem('device_id');
+      
+      // If no device_id in localStorage, use the stable fingerprint
+      if (!deviceId) {
+        deviceId = stableFingerprint;
+        localStorage.setItem('device_id', deviceId);
+      }
+      
+      // We return the local storage ID, but if it was cleared, it regenerates the identical fingerprint
+      return deviceId;
+    } catch (e) {
+      console.warn("LocalStorage is not accessible. Using random fallback.");
+      return "temp_device_" + Math.random().toString(36).substring(2, 7);
     }
   };
 
@@ -300,12 +304,18 @@ function AuthProvider({ children }: { children: ReactNode }) {
     testConnection();
 
     // Check for redirect errors
-    getRedirectResult(auth).catch((err) => {
+    getRedirectResult(auth).then((result) => {
+      if (result) {
+         setAuthError(null);
+      }
+    }).catch((err) => {
       console.error("Redirect login error:", err);
       if (err.code === 'auth/unauthorized-domain') {
-         setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته.');
-      } else {
-         setAuthError('حدث خطأ أثناء تسجيل الدخول عبر Google. حاول مرة أخرى.');
+         setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته في إعدادات Firebase.');
+      } else if (err.code === 'auth/account-exists-with-different-credential') {
+         setAuthError('يوجد حساب مسجل بالفعل بهذا البريد الإلكتروني عبر طريقة تسجيل دخول مختلفة.');
+      } else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+         setAuthError('حدث خطأ أثناء إكمال تسجيل الدخول عبر Google. حاول مرة أخرى.');
       }
     });
 
@@ -343,7 +353,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setProfile(null);
         setLoading(false);
-        setAuthError(null);
         cleanupSubscription();
       }
     });
@@ -363,8 +372,17 @@ function AuthProvider({ children }: { children: ReactNode }) {
          // Mobile standalone (not in AI Studio iframe) prefers redirect to avoid popup blockers
          await signInWithRedirect(auth, googleProvider);
       } else {
-         // Desktop or iframe prefers popup
-         await signInWithPopup(auth, googleProvider);
+         try {
+           // Desktop or iframe prefers popup
+           await signInWithPopup(auth, googleProvider);
+         } catch(err: any) {
+           if ((err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') && !isIframe) {
+             console.warn("Popup blocked, falling back to redirect...");
+             await signInWithRedirect(auth, googleProvider);
+           } else {
+             throw err;
+           }
+         }
       }
     } catch (err) {
       console.error("Google login error:", err);
