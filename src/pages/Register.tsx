@@ -1,14 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { UserPlus, Mail, Lock, ArrowLeft, Chrome, User, Calendar } from 'lucide-react';
 
 export default function Register() {
-  const { signInWithGoogle, registerWithEmail } = useAuth();
+  const { user, profile, registerWithGoogle, registerWithEmail } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  
+  useEffect(() => {
+    if (user && profile) {
+      navigate('/dashboard');
+    }
+  }, [user, profile, navigate]);
   
   const [formData, setFormData] = useState({
     firstName: '',
@@ -22,7 +28,7 @@ export default function Register() {
     setLoading(true);
     setError('');
     try {
-      await signInWithGoogle();
+      await registerWithGoogle();
       navigate('/dashboard');
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {

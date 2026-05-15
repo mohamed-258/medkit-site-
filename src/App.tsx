@@ -86,7 +86,8 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
-  signInWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  registerWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => Promise<void>;
   logout: () => Promise<void>;
@@ -186,22 +187,32 @@ function AuthProvider({ children }: { children: ReactNode }) {
         setAuthError(null);
         setProfile(mappedData);
       } else {
-        // Create new profile if not exists
-        const newProfile = {
-          uid: sessionUser.uid,
-          email: sessionUser.email || '',
-          display_name: sessionUser.displayName || 'User',
-          role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
-          points: 0,
-          completed_quizzes: 0,
-          created_at: new Date().toISOString(),
-        };
-        
-        const { error: insertError } = await supabase.from('users').insert([newProfile]);
-        if (insertError) {
-           console.error("Error creating profile:", insertError);
+        const action = localStorage.getItem('auth_action');
+        if (action === 'register' || sessionUser.email === 'mhsn68503@gmail.com') {
+          // Create new profile if not exists
+          const newProfile = {
+            uid: sessionUser.uid,
+            email: sessionUser.email || '',
+            display_name: sessionUser.displayName || 'User',
+            role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
+            points: 0,
+            completed_quizzes: 0,
+            created_at: new Date().toISOString(),
+          };
+          
+          const { error: insertError } = await supabase.from('users').insert([newProfile]);
+          if (insertError) {
+             console.error("Error creating profile:", insertError);
+          }
+          setProfile(mapUserToProfile(newProfile));
+          setAuthError(null);
+        } else {
+          // If login, and no profile exists, fail.
+          setAuthError("لا يوجد حساب مسجل بهذا البريد الإلكتروني. يرجى إنشاء حساب جديد.");
+          await signOut(auth);
+          setProfile(null);
+          setUser(null);
         }
-        setProfile(mapUserToProfile(newProfile));
       }
 
     } catch (err: any) {
@@ -287,7 +298,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signInWithGoogle = async () => {
+  const loginWithGoogle = async () => {
+    localStorage.setItem('auth_action', 'login');
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       const isIframe = window !== window.parent;
@@ -301,6 +313,25 @@ function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error("Google login error:", err);
+      throw err;
+    }
+  };
+
+  const registerWithGoogle = async () => {
+    localStorage.setItem('auth_action', 'register');
+    try {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const isIframe = window !== window.parent;
+      
+      if (isMobile && !isIframe) {
+         // Mobile standalone prefers redirect to avoid popup blockers
+         await signInWithRedirect(auth, googleProvider);
+      } else {
+         // Desktop or iframe prefers popup
+         await signInWithPopup(auth, googleProvider);
+      }
+    } catch (err) {
+      console.error("Google register error:", err);
       throw err;
     }
   };
@@ -389,7 +420,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <ErrorBoundary>
-      <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}>
+      <AuthContext.Provider value={{ user, profile, loading, isAdmin, loginWithGoogle, registerWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}>
         {children}
       </AuthContext.Provider>
     </ErrorBoundary>
