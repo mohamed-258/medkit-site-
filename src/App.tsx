@@ -132,8 +132,34 @@ function AuthProvider({ children }: { children: ReactNode }) {
       }
       return deviceId;
     } catch (e) {
-      console.warn("LocalStorage is not accessible. Device registration may be unreliable.");
-      return "temp_device_" + Math.random().toString(36).substring(2, 7);
+      console.warn("LocalStorage is not accessible. Using device fingerprint fallback.");
+      const nav = window.navigator as any;
+      const screen = window.screen;
+      
+      // Extract stable OS and Browser without version numbers
+      const osMatch = nav.userAgent?.match(/(Windows|Macintosh|Linux|iPhone|iPad|iPod|Android)/i) || ['UnknownOS'];
+      const browserMatch = nav.userAgent?.match(/(Chrome|Safari|Firefox|Edge|Opera)/i) || ['UnknownBrowser'];
+      // Handle the case where Chrome on iOS says CriOS
+      const isIOSChrome = nav.userAgent?.includes('CriOS') ? 'Chrome' : '';
+      const stableBrowser = isIOSChrome || browserMatch[0];
+
+      const str = [
+        osMatch[0],
+        stableBrowser,
+        nav.language,
+        screen.width,
+        screen.height,
+        screen.colorDepth,
+        new Date().getTimezoneOffset()
+      ].join('||');
+      
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+          const char = str.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash;
+      }
+      return "fp_" + Math.abs(hash).toString(16);
     }
   };
 
