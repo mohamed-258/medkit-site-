@@ -359,7 +359,6 @@ export default function Admin() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [editingSection, setEditingSection] = useState<Section | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-  const [editingDevices, setEditingDevices] = useState<Record<string, string>>({});
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -1166,34 +1165,6 @@ export default function Admin() {
     }
   };
 
-  const updateAllowedDevices = async (user: UserProfile, count: number) => {
-    try {
-      await supabase.from('users').update({ allowed_devices: count }).eq('uid', user.uid);
-      
-      // Update local state
-      setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, allowedDevices: count } : u));
-      
-      setMessage({ text: 'Allowed devices updated successfully', type: 'success' });
-    } catch (error: any) {
-      console.error(error);
-      setMessage({ text: 'Database error occurred.', type: 'error' });
-    }
-  };
-
-  const clearRegisteredDevices = async (user: UserProfile) => {
-    try {
-      await supabase.from('users').update({ registered_devices: [] }).eq('uid', user.uid);
-      
-      // Update local state
-      setUsers(prev => prev.map(u => u.uid === user.uid ? { ...u, registeredDevices: [] } : u));
-      
-      setMessage({ text: 'Registered devices cleared successfully', type: 'success' });
-    } catch (error: any) {
-      console.error(error);
-      setMessage({ text: 'Database error occurred.', type: 'error' });
-    }
-  };
-
   const handleAddSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subjectForm.nameAr && !subjectForm.nameEn) {
@@ -1993,8 +1964,6 @@ export default function Admin() {
             loading={loading}
             onToggleRole={toggleUserRole}
             onToggleSubjectAccess={toggleSubjectAccess}
-            onUpdateAllowedDevices={updateAllowedDevices}
-            onClearDevices={clearRegisteredDevices}
             onRefreshPoints={refreshUserPoints}
             onRefreshAllPoints={refreshAllUsersPoints}
           />

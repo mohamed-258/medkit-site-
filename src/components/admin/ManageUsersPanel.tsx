@@ -47,8 +47,6 @@ interface ManageUsersPanelProps {
   loading: boolean;
   onToggleRole: (user: UserProfile) => Promise<void>;
   onToggleSubjectAccess: (user: UserProfile, subjectId: string) => Promise<void>;
-  onUpdateAllowedDevices: (user: UserProfile, count: number) => Promise<void>;
-  onClearDevices: (user: UserProfile) => Promise<void>;
   onRefreshPoints: (userId: string) => Promise<void>;
   onRefreshAllPoints: () => Promise<void>;
 }
@@ -75,8 +73,6 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
   loading,
   onToggleRole,
   onToggleSubjectAccess,
-  onUpdateAllowedDevices,
-  onClearDevices,
   onRefreshPoints,
   onRefreshAllPoints
 }) => {
@@ -174,7 +170,6 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
                 <th className="py-3 px-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Birth Date</th>
                 <th className="py-3 px-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Joined On</th>
                 <th className="py-3 px-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Account Role</th>
-                <th className="py-3 px-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Devices</th>
                 <th className="py-3 px-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Subject Access</th>
                 <th className="py-3 px-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
               </tr>
@@ -275,16 +270,6 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
                           </span>
                         </td>
 
-                        {/* Devices */}
-                        <td className="py-4 px-4">
-                          <div className="flex items-center gap-2">
-                            <MonitorSmartphone size={14} className="text-slate-400" />
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              {(user.registeredDevices || []).length} / {user.allowedDevices || 1}
-                            </span>
-                          </div>
-                        </td>
-
                         {/* Subject Access Progress */}
                         <td className="py-4 px-4">
                           <div className="space-y-1.5">
@@ -337,7 +322,7 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 
                                 {/* Subject Access Control */}
-                                <div className="space-y-6">
+                                <div className="space-y-6 lg:border-r lg:pr-8 lg:dark:border-slate-800">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                       <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-600">
@@ -380,55 +365,6 @@ export const ManageUsersPanel: React.FC<ManageUsersPanelProps> = ({
                                         </div>
                                       );
                                     })}
-                                  </div>
-                                </div>
-
-                                {/* Device Management */}
-                                <div className="space-y-6 lg:border-l lg:pl-8 border-slate-100 dark:border-slate-800">
-                                  <div className="flex items-center gap-2">
-                                    <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-600">
-                                      <MonitorSmartphone size={18} />
-                                    </div>
-                                    <div>
-                                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">Device Management</h4>
-                                      <p className="text-xs text-slate-500">Control login limits and active sessions</p>
-                                    </div>
-                                  </div>
-
-                                  <div className="space-y-4">
-                                    <div className="space-y-2">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Allowed Devices</label>
-                                      <input 
-                                        type="number" 
-                                        min="1"
-                                        defaultValue={user.allowedDevices || 1}
-                                        onBlur={(e) => onUpdateAllowedDevices(user, parseInt(e.target.value) || 1)}
-                                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold"
-                                      />
-                                    </div>
-
-                                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                          <div className="size-10 bg-white dark:bg-slate-900 rounded-lg flex items-center justify-center text-slate-400 border border-slate-100 dark:border-slate-800">
-                                            <MonitorSmartphone size={20} />
-                                          </div>
-                                          <div>
-                                            <p className="text-xs font-bold text-slate-900 dark:text-white">
-                                              {(user.registeredDevices || []).length} Devices Registered
-                                            </p>
-                                            <p className="text-[10px] text-slate-500">Currently active sessions</p>
-                                          </div>
-                                        </div>
-                                        <button 
-                                          onClick={() => onClearDevices(user)}
-                                          className="p-2.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 rounded-lg transition-all"
-                                          title="Clear all registered devices"
-                                        >
-                                          <Trash2 size={18} />
-                                        </button>
-                                      </div>
-                                    </div>
                                   </div>
                                 </div>
 

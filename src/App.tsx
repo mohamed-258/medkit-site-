@@ -123,20 +123,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const getDeviceId = () => {
-    try {
-      let deviceId = localStorage.getItem('device_id');
-      if (!deviceId) {
-        deviceId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('device_id', deviceId);
-      }
-      return deviceId;
-    } catch (e) {
-      console.warn("LocalStorage is not accessible. Device registration may be unreliable.");
-      return "temp_device_" + Math.random().toString(36).substring(2, 7);
-    }
-  };
-
   const mapUserToProfile = (data: any): UserProfile => {
     let finalDisplayName = data.display_name;
     if (data.first_name) {
@@ -159,8 +145,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
       totalCorrectAnswers: data.total_correct_answers,
       sectionPoints: data.section_points,
       allowedSubjects: data.allowed_subjects,
-      allowedDevices: data.allowed_devices,
-      registeredDevices: data.registered_devices,
       createdAt: data.created_at,
     };
   };
@@ -199,33 +183,10 @@ function AuthProvider({ children }: { children: ReactNode }) {
           mappedData.role = 'owner';
         }
 
-        // Device restriction check - only for student role
-        if (sessionUser.email !== 'mhsn68503@gmail.com' && mappedData.role !== 'owner' && mappedData.role !== 'admin') {
-          const deviceId = getDeviceId();
-          const allowed = mappedData.allowedDevices || 1;
-          const registered = mappedData.registeredDevices || [];
-
-          if (!registered.includes(deviceId)) {
-            if (registered.length < allowed) {
-              const newRegistered = [...registered, deviceId];
-              await supabase.from('users').update({ registered_devices: newRegistered }).eq('uid', sessionUser.uid);
-              mappedData.registeredDevices = newRegistered;
-            } else {
-              setAuthError('عذراً، هذا الحساب مسجل على الحد الأقصى من الأجهزة المسموح بها. يرجى التواصل مع الإدارة.');
-              await signOut(auth);
-              setProfile(null);
-              setUser(null);
-              setLoading(false);
-              return;
-            }
-          }
-        }
-
         setAuthError(null);
         setProfile(mappedData);
       } else {
         // Create new profile if not exists
-        const deviceId = getDeviceId();
         const newProfile = {
           uid: sessionUser.uid,
           email: sessionUser.email || '',
@@ -233,8 +194,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
           role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
           points: 0,
           completed_quizzes: 0,
-          allowed_devices: 1,
-          registered_devices: [deviceId],
           created_at: new Date().toISOString(),
         };
         
