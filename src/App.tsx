@@ -197,9 +197,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
           created_at: new Date().toISOString(),
         };
         
-        const { error: upsertError } = await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
-        if (upsertError) {
-           console.error("Error creating profile:", upsertError);
+        const { error: insertError } = await supabase.from('users').insert([newProfile]);
+        if (insertError) {
+           console.error("Error creating profile:", insertError);
         }
         setProfile(mapUserToProfile(newProfile));
       }
@@ -330,7 +330,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
           points: 0,
           completed_quizzes: 0,
         };
-        await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
+        const { error: insertError } = await supabase.from('users').insert([newProfile]);
+        if (insertError) {
+          console.error("Supabase insert error:", insertError);
+          throw new Error("Failed to save user profile.");
+        }
       }
       await signOut(auth);
     } catch (err) {
