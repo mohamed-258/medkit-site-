@@ -214,7 +214,14 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
         if (upsertError) {
           console.error('Upsert error:', upsertError);
-          // Don't leave the user stranded; create an in-memory profile
+          if (upsertError.code === '23505' && upsertError.message.includes('email')) {
+             setAuthError('An account with this email already exists. Please login using Email and Password.');
+             await auth.signOut();
+             setProfile(null);
+             setUser(null);
+             return;
+          }
+          // Fallback in-memory profile for other errors (RLS etc) just in case
           setProfile(mapUserToProfile(newRow));
         } else {
           setProfile(mapUserToProfile(newRow)); // ← profile set BEFORE loading drops

@@ -29,7 +29,8 @@ export default function Register() {
     setError('');
     try {
       await signInWithGoogle();
-      navigate('/dashboard');
+      // The useEffect at the top will automatically redirect to dashboard
+      // once the profile is fully loaded, preventing the ProtectedRoute redirect glitch.
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         setError('Registration window was closed before completion. Please try again.');
@@ -39,7 +40,6 @@ export default function Register() {
         setError(err.message || 'An error occurred during registration. Please try again.');
         console.error(err);
       }
-    } finally {
       setLoading(false);
     }
   };
