@@ -304,13 +304,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   // ── public auth methods ────────────────────────────────────────────────────
   const signInWithGoogle = async () => {
     try {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const isIframe = window !== window.parent;
-      if (isMobile && !isIframe) {
-        await signInWithRedirect(auth, googleProvider);
-      } else {
-        await signInWithPopup(auth, googleProvider);
-      }
+      await signInWithPopup(auth, googleProvider);
     } catch (err) {
       console.error('Google sign-in error:', err);
       throw err;

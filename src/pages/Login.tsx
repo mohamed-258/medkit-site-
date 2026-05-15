@@ -26,11 +26,11 @@ export default function Login() {
       // once the profile is fully loaded, preventing the ProtectedRoute redirect glitch.
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        setError('Login window was closed before completion. Please try again.');
+        setError('تم إغلاق نافذة تسجيل الدخول قبل الاكتمال. إذا استمرت المشكلة، يُرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab) أعلى يمين الشاشة والمحاولة مرة أخرى.');
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for Firebase Authentication. Please add your Netlify domain in the Firebase Console.');
+        setError('هذا النطاق غير مصرح له في Firebase. يرجى إضافته في إعدادات Firebase.');
       } else {
-        setError(err.message || 'An error occurred during login. Please try again.');
+        setError(err.message || 'حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.');
         console.error(err);
       }
       setLoading(false);
