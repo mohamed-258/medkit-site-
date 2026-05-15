@@ -13,7 +13,7 @@ import { auth, googleProvider } from './firebase';
 import {
   signInWithPopup, signInWithRedirect, getRedirectResult,
   signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signOut, onAuthStateChanged,
+  signOut, onAuthStateChanged, sendEmailVerification,
 } from 'firebase/auth';
 
 import { UserProfile } from './types';
@@ -106,6 +106,7 @@ interface AuthContextType {
   signInWithGoogle:  () => Promise<void>;
   loginWithEmail:    (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, data: { firstName: string; fatherName: string; dateOfBirth: string }) => Promise<void>;
+  resendVerification: (email: string, pass: string) => Promise<void>;
   logout:       () => Promise<void>;
   reloadProfile: () => Promise<void>;
 }
@@ -333,6 +334,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { user: authUser } = await createUserWithEmailAndPassword(auth, email, pass);
       if (authUser) {
+        await sendEmailVerification(authUser);
         const newRow = {
           uid:          authUser.uid,
           email:        authUser.email || '',
@@ -350,6 +352,17 @@ function AuthProvider({ children }: { children: ReactNode }) {
       await signOut(auth);
     } catch (err) {
       console.error('Registration error:', err);
+      throw err;
+    }
+  };
+
+  const resendVerification = async (email: string, pass: string) => {
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, pass);
+      await sendEmailVerification(result.user);
+      await signOut(auth);
+    } catch (err) {
+      console.error('Resend verification error:', err);
       throw err;
     }
   };
@@ -396,7 +409,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundary>
       <AuthContext.Provider
-        value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}
+        value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, resendVerification, logout, reloadProfile }}
       >
         {children}
       </AuthContext.Provider>

@@ -70,7 +70,7 @@ export default function Register() {
       setSuccessMsg('تم إنشاء الحساب بنجاح! يرجى مراجعة بريدك الإلكتروني (Inbox أو Spam) للضغط على رابط التفعيل قبل تسجيل الدخول.');
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists.');
+        setError('يوجد حساب مسجل بهذا البريد الإلكتروني. يرجى تسجيل الدخول أو استعادة كلمة المرور.');
       } else if (err.code === 'auth/invalid-email') {
         setError('Please enter a valid email address.');
       } else if (err.code === 'auth/operation-not-allowed') {

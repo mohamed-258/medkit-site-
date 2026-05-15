@@ -4,12 +4,14 @@ import { useAuth } from '../App';
 import { LogIn, Mail, Lock, ShieldCheck, ArrowLeft, Chrome } from 'lucide-react';
 
 export default function Login() {
-  const { user, profile, signInWithGoogle, loginWithEmail } = useAuth();
+  const { user, profile, signInWithGoogle, loginWithEmail, resendVerification } = useAuth() as any;
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState('');
 
   useEffect(() => {
     if (user && profile) {
@@ -20,6 +22,7 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError('');
+    setResendSuccess('');
     try {
       await signInWithGoogle();
       // The useEffect at the top will automatically redirect to dashboard
@@ -50,12 +53,13 @@ export default function Login() {
 
     setLoading(true);
     setError('');
+    setResendSuccess('');
     try {
       await loginWithEmail(email, password);
       navigate('/dashboard');
     } catch (err: any) {
       if (err.message === 'email-not-verified') {
-        setError('يرجى التحقق من بريدك الإلكتروني لتفعيل الحساب قبل تسجيل الدخول.');
+        setError('email-not-verified');
       } else if (err.code === 'auth/invalid-credential') {
         setError('Invalid email or password.');
       } else if (err.code === 'auth/operation-not-allowed') {
@@ -68,6 +72,22 @@ export default function Login() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!email || !password) return;
+    setResendLoading(true);
+    setError('');
+    setResendSuccess('');
+    try {
+      await resendVerification(email, password);
+      setResendSuccess('تم إرسال رسالة التفعيل بنجاح. يرجى مراجعة بريدك الإلكتروني (وصندوق الرسائل غير المرغوب فيها).');
+    } catch (err: any) {
+      setError('حدث خطأ أثناء إرسال رسالة التفعيل. يرجى المحاولة مرة أخرى لاحقاً.');
+      console.error(err);
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -84,10 +104,30 @@ export default function Login() {
           <p className="text-slate-500 dark:text-slate-400">Login to continue with MedKit</p>
         </div>
 
-        {error && (
+        {error === 'email-not-verified' && (
+          <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm rounded-xl border border-amber-200 dark:border-amber-800">
+            <p className="font-bold mb-2">يرجى التحقق من بريدك الإلكتروني لتفعيل الحساب قبل تسجيل الدخول.</p>
+            <button
+              onClick={handleResend}
+              disabled={resendLoading}
+              className="px-4 py-2 mt-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold transition-all disabled:opacity-50 text-xs w-full"
+            >
+              {resendLoading ? 'جاري الإرسال...' : 'إعادة إرسال رسالة التفعيل'}
+            </button>
+          </div>
+        )}
+
+        {error && error !== 'email-not-verified' && (
           <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-xl border border-red-100 dark:border-red-800 flex items-center gap-2">
             <span className="w-1.5 h-1.5 bg-red-600 rounded-full shrink-0"></span>
             <p>{error}</p>
+          </div>
+        )}
+
+        {resendSuccess && (
+          <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm rounded-xl border border-green-200 dark:border-green-800 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-green-600 rounded-full shrink-0"></span>
+            <p>{resendSuccess}</p>
           </div>
         )}
 
