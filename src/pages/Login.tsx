@@ -25,13 +25,17 @@ export default function Login() {
       // The useEffect at the top will automatically redirect to dashboard
       // once the profile is fully loaded, preventing the ProtectedRoute redirect glitch.
     } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/unauthorized-domain') {
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        setError('تم إغلاق نافذة تسجيل الدخول قبل الاكتمال. إذا استمرت المشكلة، يُرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab) أعلى يمين الشاشة والمحاولة مرة أخرى.');
+      } else if (err.code === 'auth/unauthorized-domain') {
         setError('هذا النطاق غير مصرح له في Firebase. يرجى إضافته في إعدادات Firebase.');
       } else if (err.code === 'auth/internal-error') {
-        setError('حدث خطأ داخلي. بسبب قيود المتصفح (Iframe)، يرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab) أعلى يمين الشاشة والمحاولة مرة أخرى.');
+        setError('تعذر تسجيل الدخول بواسطة جوجل. إذا كنت تستخدم نافذة المعاينة (Preview)، يرجى فتح التطبيق في علامة تبويب جديدة (عبر الأيقونة أعلى يمين الشاشة) لتعمل نوافذ تسجيل الدخول بنجاح، أو استخدم التسجيل بالبريد الإلكتروني.');
+      } else if (err.code?.includes('app-check-token-is-invalid')) {
+        setError('تعذر تسجيل الدخول بسبب تفعيل ميزة App Check في Firebase دون إعدادها. يرجى إيقاف فرض App Check (Enforcement) من وحدة تحكم Firebase.');
       } else {
         setError(err.message || 'حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.');
+        console.error(err);
       }
       setLoading(false);
     }
@@ -56,8 +60,8 @@ export default function Login() {
         setError('Invalid email or password.');
       } else if (err.code === 'auth/operation-not-allowed') {
         setError('Email/Password authentication is not enabled. Please enable it in your Firebase Console.');
-      } else if (err.code === 'auth/internal-error') {
-        setError('حدث خطأ داخلي. بسبب قيود المتصفح (Iframe)، يرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab) أعلى يمين الشاشة والمحاولة مرة أخرى.');
+      } else if (err.code?.includes('app-check-token-is-invalid')) {
+        setError('تعذر تسجيل الدخول بسبب تفعيل ميزة App Check في Firebase دون إعدادها. يرجى إيقاف فرض App Check (Enforcement) من وحدة تحكم Firebase.');
       } else {
         setError(err.message || 'An error occurred during login.');
       }
