@@ -26,11 +26,11 @@ export default function Register() {
       navigate('/dashboard');
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        setError('Registration window was closed before completion. Please try again.');
+        setError('تم إغلاق نافذة التسجيل. يرجى التأكد من السماح بالنوافذ المنبثقة. إذا كنت تواجه مشكلة، جرب فتح التطبيق في علامة تبويب جديدة من الأعلى.');
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for Firebase Authentication. Please add your Netlify domain in the Firebase Console.');
+        setError('هذا النطاق غير مصرح له. يرجى إضافة النطاق في إعدادات Firebase.');
       } else {
-        setError(err.message || 'An error occurred during registration. Please try again.');
+        setError(err.message || 'حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.');
         console.error(err);
       }
     } finally {
