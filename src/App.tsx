@@ -129,14 +129,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
       const screen = window.screen;
       
       const osMatch = nav.userAgent?.match(/(Windows|Macintosh|Linux|iPhone|iPad|iPod|Android)/i) || ['UnknownOS'];
-      const browserMatch = nav.userAgent?.match(/(Chrome|Safari|Firefox|Edge|Opera)/i) || ['UnknownBrowser'];
-      const isIOSChrome = nav.userAgent?.includes('CriOS') ? 'Chrome' : '';
-      const stableBrowser = isIOSChrome || browserMatch[0];
 
       const fingerprintStr = [
         osMatch[0],
-        stableBrowser,
-        nav.language,
         screen.width,
         screen.height,
         screen.colorDepth,
@@ -149,12 +144,16 @@ function AuthProvider({ children }: { children: ReactNode }) {
           hash = ((hash << 5) - hash) + char;
           hash = hash & hash;
       }
-      const stableFingerprint = "fp_" + Math.abs(hash).toString(16);
+      const stableFingerprint = "fp_v2_" + Math.abs(hash).toString(16);
 
       let deviceId = localStorage.getItem('device_id');
       
       // If no device_id in localStorage, use the stable fingerprint
       if (!deviceId) {
+        deviceId = stableFingerprint;
+        localStorage.setItem('device_id', deviceId);
+      } else if (deviceId.startsWith('fp_') && !deviceId.startsWith('fp_v2_')) {
+        // Upgrade to v2 fingerprint to support multiple browsers on same device
         deviceId = stableFingerprint;
         localStorage.setItem('device_id', deviceId);
       }
