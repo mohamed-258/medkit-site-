@@ -1,23 +1,57 @@
-import { useState, useEffect, useRef, createContext, useContext, ReactNode, lazy, Suspense } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
+import {
+  useState, useEffect, useRef,
+  createContext, useContext,
+  ReactNode, lazy, Suspense,
+  Component, ErrorInfo,
+} from 'react';
+import {
+  HashRouter as Router, Routes, Route,
+  Navigate, Link, useNavigate, useLocation,
+} from 'react-router-dom';
 import { supabase } from './supabase';
 import { auth, googleProvider } from './firebase';
-import { signInWithPopup, signInWithRedirect, getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { handleSupabaseError, OperationType } from './lib/supabase-errors';
+import {
+  signInWithPopup, signInWithRedirect, getRedirectResult,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  signOut, onAuthStateChanged,
+} from 'firebase/auth';
 
-import React, { Component, ErrorInfo } from 'react';
+import { UserProfile } from './types';
+import {
+  LogOut, Menu, X, Moon, Sun,
+  ShieldCheck, Bell,
+} from 'lucide-react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import NotificationsDropdown from './components/NotificationsDropdown';
+import DashboardLayout from './components/DashboardLayout';
 
-interface ErrorBoundaryProps {
-  children: ReactNode;
+// ─── utils ────────────────────────────────────────────────────────────────────
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 }
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
+// ─── lazy pages ───────────────────────────────────────────────────────────────
+const HomePage     = lazy(() => import('./pages/Home'));
+const LoginPage    = lazy(() => import('./pages/Login'));
+const RegisterPage = lazy(() => import('./pages/Register'));
+const DashboardPage = lazy(() => import('./pages/Dashboard'));
+const QuizPage     = lazy(() => import('./pages/Quiz'));
+const ResultPage   = lazy(() => import('./pages/Result'));
+const AdminPage    = lazy(() => import('./pages/Admin'));
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+    <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+  </div>
+);
+
+// ─── ErrorBoundary ────────────────────────────────────────────────────────────
+interface EBProps  { children: ReactNode }
+interface EBState  { hasError: boolean; error: Error | null }
+
+class ErrorBoundary extends Component<EBProps, EBState> {
+  constructor(props: EBProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -26,133 +60,112 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("ErrorBoundary caught an error", error, errorInfo);
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('ErrorBoundary:', error, info);
   }
 
   render() {
-    if (this.state.hasError) {
-      let displayMessage = "Something went wrong. Please try refreshing the page.";
-      try {
-        const parsed = JSON.parse(this.state.error?.message || "");
-        if (parsed.error && parsed.operationType) {
-          displayMessage = `Database Error (${parsed.operationType}): ${parsed.error}`;
-        }
-      } catch (e) {
-        if (this.state.error?.message.includes('auth/network-request-failed')) {
-          displayMessage = "Network error: Unable to reach authentication servers. Please check your internet connection or try again later.";
-        }
-      }
+    if (!this.state.hasError) return this.props.children;
 
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
-          <div className="max-w-md w-full bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 text-center">
-            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6">
-              <ShieldCheck size={32} />
-            </div>
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4">Application Error</h2>
-            <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">
-              {displayMessage}
-            </p>
-            <button 
-              onClick={() => window.location.reload()}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20 transition-all"
-            >
-              Refresh Page
-            </button>
-          </div>
-        </div>
-      );
+    let msg = 'Something went wrong. Please try refreshing the page.';
+    try {
+      const parsed = JSON.parse(this.state.error?.message || '');
+      if (parsed.error && parsed.operationType)
+        msg = `Database Error (${parsed.operationType}): ${parsed.error}`;
+    } catch {
+      if (this.state.error?.message.includes('auth/network-request-failed'))
+        msg = 'Network error: Unable to reach authentication servers. Please check your internet connection.';
     }
 
-    return this.props.children;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 text-center">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldCheck size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4">Application Error</h2>
+          <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">{msg}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20 transition-all"
+          >
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    );
   }
 }
 
-import { UserProfile, Notification } from './types';
-import { LogOut, LayoutDashboard, BookOpen, Trophy, Settings, Menu, X, Moon, Sun, Home as HomeIcon, LogIn, UserPlus, ShieldCheck, Bell } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
+// ─── AuthContext ──────────────────────────────────────────────────────────────
 interface AuthContextType {
-  user: any | null;
-  profile: UserProfile | null;
-  loading: boolean;
-  isAdmin: boolean;
-  signInWithGoogle: () => Promise<void>;
-  loginWithEmail: (email: string, pass: string) => Promise<void>;
-  registerWithEmail: (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => Promise<void>;
-  logout: () => Promise<void>;
-  reloadProfile?: () => Promise<void>;
+  user:      any | null;
+  profile:   UserProfile | null;
+  loading:   boolean;
+  isAdmin:   boolean;
+  signInWithGoogle:  () => Promise<void>;
+  loginWithEmail:    (email: string, pass: string) => Promise<void>;
+  registerWithEmail: (email: string, pass: string, data: { firstName: string; fatherName: string; dateOfBirth: string }) => Promise<void>;
+  logout:       () => Promise<void>;
+  reloadProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 }
 
-const HomePage = lazy(() => import('./pages/Home'));
-const LoginPage = lazy(() => import('./pages/Login'));
-const RegisterPage = lazy(() => import('./pages/Register'));
-const DashboardPage = lazy(() => import('./pages/Dashboard'));
-const QuizPage = lazy(() => import('./pages/Quiz'));
-const ResultPage = lazy(() => import('./pages/Result'));
-const AdminPage = lazy(() => import('./pages/Admin'));
-
-const PageLoader = () => (
-  <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-    <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-  </div>
-);
-
+// ─── AuthProvider ─────────────────────────────────────────────────────────────
 function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<any | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user,      setUser]      = useState<any | null>(null);
+  const [profile,   setProfile]   = useState<UserProfile | null>(null);
+  // Start as TRUE — prevents any redirect before auth resolves
+  const [loading,   setLoading]   = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const mapUserToProfile = (data: any): UserProfile => {
-    let finalDisplayName = data.display_name;
-    if (data.first_name) {
-      finalDisplayName = `${data.first_name} ${data.father_name || ''}`.trim();
-    } else if (!finalDisplayName || finalDisplayName === 'Student' || finalDisplayName === 'User') {
-      finalDisplayName = data.email ? data.email.split('@')[0] : 'User';
-    }
+  // Refs for callbacks that need latest values without re-subscribing
+  const profileRef = useRef<UserProfile | null>(null);
+  const userRef    = useRef<any | null>(null);
 
+  useEffect(() => { profileRef.current = profile; }, [profile]);
+  useEffect(() => { userRef.current    = user;    }, [user]);
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const mapUserToProfile = (data: any): UserProfile => {
+    let displayName = data.display_name;
+    if (data.first_name) {
+      displayName = `${data.first_name} ${data.father_name || ''}`.trim();
+    } else if (!displayName || displayName === 'Student' || displayName === 'User') {
+      displayName = data.email ? data.email.split('@')[0] : 'User';
+    }
     return {
-      uid: data.uid,
-      email: data.email,
-      displayName: finalDisplayName,
-      firstName: data.first_name,
-      fatherName: data.father_name,
-      dateOfBirth: data.date_of_birth,
-      role: data.role,
-      points: data.points,
-      completedQuizzes: data.completed_quizzes,
+      uid:                   data.uid,
+      email:                 data.email,
+      displayName,
+      firstName:             data.first_name,
+      fatherName:            data.father_name,
+      dateOfBirth:           data.date_of_birth,
+      role:                  data.role,
+      points:                data.points,
+      completedQuizzes:      data.completed_quizzes,
       totalQuestionsAnswered: data.total_questions_answered,
-      totalCorrectAnswers: data.total_correct_answers,
-      sectionPoints: data.section_points,
-      allowedSubjects: data.allowed_subjects,
-      createdAt: data.created_at,
+      totalCorrectAnswers:   data.total_correct_answers,
+      sectionPoints:         data.section_points,
+      allowedSubjects:       data.allowed_subjects,
+      createdAt:             data.created_at,
     };
   };
 
-  const userRef = useRef<any>(null);
-  const profileRef = useRef<UserProfile | null>(null);
-
-  useEffect(() => {
-    userRef.current = user;
-    profileRef.current = profile;
-  }, [user, profile]);
-
+  // ── fetchProfile ───────────────────────────────────────────────────────────
+  // IMPORTANT: always call setLoading(true) BEFORE and setLoading(false) in
+  // finally so ProtectedRoute never sees loading=false with profile=null
+  // for an authenticated user.
   const fetchProfile = async (sessionUser: any) => {
+    setLoading(true); // explicit — guard any early return paths
+
     try {
       const { data, error } = await supabase
         .from('users')
@@ -160,67 +173,77 @@ function AuthProvider({ children }: { children: ReactNode }) {
         .eq('uid', sessionUser.uid)
         .single();
 
+      // PGRST116 = row not found — not an error for us
       if (error && error.code !== 'PGRST116') {
+        // Network blip: keep stale profile if available
         if (error.message.includes('Failed to fetch') && profileRef.current) {
-          console.warn("Network error, keeping current profile.");
-          return;
+          console.warn('Network error — keeping current profile.');
+          return; // finally will setLoading(false)
         }
         throw error;
       }
 
       if (data) {
-        let mappedData = mapUserToProfile(data);
-        if (sessionUser.email === 'mhsn68503@gmail.com' && mappedData.role !== 'owner') {
+        // Existing user
+        let mapped = mapUserToProfile(data);
+
+        // Ensure owner role for the master account
+        if (sessionUser.email === 'mhsn68503@gmail.com' && mapped.role !== 'owner') {
           await supabase.from('users').update({ role: 'owner' }).eq('uid', sessionUser.uid);
-          mappedData.role = 'owner';
+          mapped = { ...mapped, role: 'owner' };
         }
+
+        setProfile(mapped); // ← profile set BEFORE loading drops
         setAuthError(null);
-        setProfile(mappedData);
       } else {
-        const newProfile = {
-          uid: sessionUser.uid,
-          email: sessionUser.email || '',
+        // New user — create the row first, then set profile
+        const newRow = {
+          uid:          sessionUser.uid,
+          email:        sessionUser.email || '',
           display_name: sessionUser.displayName || 'User',
-          role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
-          points: 0,
+          role:         sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
+          points:       0,
           completed_quizzes: 0,
-          created_at: new Date().toISOString(),
+          created_at:   new Date().toISOString(),
         };
+
+        // Use uid as the conflict key — Google users may not have a prior email row
         const { error: upsertError } = await supabase
           .from('users')
-          .upsert(newProfile, { onConflict: 'email' });
-        if (!upsertError) {
-          setProfile(mapUserToProfile(newProfile));
+          .upsert(newRow, { onConflict: 'uid' });
+
+        if (upsertError) {
+          console.error('Upsert error:', upsertError);
+          // Don't leave the user stranded; create an in-memory profile
+          setProfile(mapUserToProfile(newRow));
+        } else {
+          setProfile(mapUserToProfile(newRow)); // ← profile set BEFORE loading drops
         }
+        setAuthError(null);
       }
     } catch (err: any) {
-      console.error("Error fetching profile:", err);
-      if (profileRef.current) return;
-      setAuthError(err.message || "حدث خطأ أثناء جلب بيانات المستخدم.");
+      console.error('fetchProfile error:', err);
+      // Only surface the error if we have no fallback profile
+      if (!profileRef.current) {
+        setAuthError(err.message || 'حدث خطأ أثناء جلب بيانات المستخدم.');
+      }
     } finally {
-      setLoading(false);
+      setLoading(false); // ← always last, after setProfile
     }
   };
 
+  // ── auth listener ──────────────────────────────────────────────────────────
   useEffect(() => {
-    let profileSubscription: any;
+    let profileSub: any = null;
 
-    const testConnection = async () => {
-      try {
-        const { testSupabaseConnection } = await import('./supabase');
-        const result = await testSupabaseConnection();
-        if (!result.ok) {
-          console.error("Supabase Connection Critical Error:", result.error);
-        }
-      } catch (e) {
-        console.error("Failed to import or test Supabase connection", e);
-      }
-    };
+    // Test Supabase connectivity in the background (non-blocking)
+    import('./supabase')
+      .then(m => 'testSupabaseConnection' in m && (m as any).testSupabaseConnection())
+      .catch(console.error);
 
-    testConnection();
-
-    getRedirectResult(auth).catch((err) => {
-      console.error("Redirect login error:", err);
+    // Handle redirect result (mobile Google sign-in)
+    getRedirectResult(auth).catch((err: any) => {
+      console.error('Redirect result error:', err);
       if (err.code === 'auth/unauthorized-domain') {
         setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته.');
       } else {
@@ -228,54 +251,50 @@ function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const cleanupSubscription = () => {
-      if (profileSubscription) {
-        supabase.removeChannel(profileSubscription);
-        profileSubscription = null;
-      }
+    const cleanupSub = () => {
+      if (profileSub) { supabase.removeChannel(profileSub); profileSub = null; }
     };
 
     const unsubscribe = onAuthStateChanged(auth, (sessionUser) => {
-      console.log("Auth State:", sessionUser ? "logged in" : "logged out");
       if (sessionUser) {
-        const isSameUser = userRef.current?.uid === sessionUser.uid;
+        const sameUser   = userRef.current?.uid === sessionUser.uid;
         const hasProfile = !!profileRef.current;
 
-        if (!isSameUser || !hasProfile) {
-          setUser(sessionUser);
+        setUser(sessionUser);
+
+        if (!sameUser || !hasProfile) {
+          // New session or no cached profile — fetch (sets loading internally)
           fetchProfile(sessionUser);
         } else {
-          setUser(sessionUser);
+          // Same user with existing profile — nothing to fetch
           setLoading(false);
         }
 
-        cleanupSubscription();
-        profileSubscription = supabase
+        // Subscribe to real-time profile changes
+        cleanupSub();
+        profileSub = supabase
           .channel(`public:users:uid=eq.${sessionUser.uid}`)
-          .on('postgres_changes', { 
-            event: '*', 
-            schema: 'public', 
-            table: 'users', 
-            filter: `uid=eq.${sessionUser.uid}` 
-          }, payload => {
-            if (payload.new) setProfile(mapUserToProfile(payload.new));
-          })
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'users', filter: `uid=eq.${sessionUser.uid}` },
+            payload => { if (payload.new) setProfile(mapUserToProfile(payload.new)); }
+          )
           .subscribe();
       } else {
+        // Signed out
         setUser(null);
         setProfile(null);
         setLoading(false);
         setAuthError(null);
-        cleanupSubscription();
+        cleanupSub();
       }
     });
 
-    return () => {
-      unsubscribe();
-      cleanupSubscription();
-    };
+    return () => { unsubscribe(); cleanupSub(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── public auth methods ────────────────────────────────────────────────────
   const signInWithGoogle = async () => {
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -286,7 +305,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         await signInWithPopup(auth, googleProvider);
       }
     } catch (err) {
-      console.error("Google login error:", err);
+      console.error('Google sign-in error:', err);
       throw err;
     }
   };
@@ -300,52 +319,59 @@ function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     } catch (err) {
-      console.error("Email login error:", err);
+      console.error('Email login error:', err);
       throw err;
     }
   };
 
-  const registerWithEmail = async (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => {
+  const registerWithEmail = async (
+    email: string,
+    pass: string,
+    data: { firstName: string; fatherName: string; dateOfBirth: string }
+  ) => {
     try {
       const { user: authUser } = await createUserWithEmailAndPassword(auth, email, pass);
       if (authUser) {
-        const newProfile = {
-          uid: authUser.uid,
-          email: authUser.email || '',
+        const newRow = {
+          uid:          authUser.uid,
+          email:        authUser.email || '',
           display_name: `${data.firstName} ${data.fatherName}`,
-          first_name: data.firstName,
-          father_name: data.fatherName,
+          first_name:   data.firstName,
+          father_name:  data.fatherName,
           date_of_birth: data.dateOfBirth,
-          role: authUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
-          points: 0,
+          role:         authUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
+          points:       0,
           completed_quizzes: 0,
         };
-        await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
+        await supabase.from('users').upsert(newRow, { onConflict: 'uid' });
       }
-      await signOut(auth); 
+      // Sign out immediately — email verification required
+      await signOut(auth);
     } catch (err) {
-      console.error("Registration error:", err);
+      console.error('Registration error:', err);
       throw err;
     }
   };
 
   const reloadProfile = async () => {
-    if (user) {
-      try {
-        const { data, error } = await supabase.from('users').select('*').eq('uid', user.uid).single();
-        if (data && !error) setProfile(mapUserToProfile(data));
-      } catch (err) {
-        console.error("Error reloading profile:", err);
-      }
+    if (!userRef.current) return;
+    try {
+      const { data, error } = await supabase
+        .from('users').select('*').eq('uid', userRef.current.uid).single();
+      if (data && !error) setProfile(mapUserToProfile(data));
+    } catch (err) {
+      console.error('reloadProfile error:', err);
     }
   };
 
-  const logout = async () => {
-    await signOut(auth);
-  };
+  const logout = async () => { await signOut(auth); };
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'owner' || user?.email === 'mhsn68503@gmail.com';
+  const isAdmin =
+    profile?.role === 'admin' ||
+    profile?.role === 'owner' ||
+    user?.email   === 'mhsn68503@gmail.com';
 
+  // ── auth error screen ──────────────────────────────────────────────────────
   if (authError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
@@ -355,7 +381,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
           </div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4">تم رفض الوصول</h2>
           <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">{authError}</p>
-          <button 
+          <button
             onClick={() => { setAuthError(null); window.location.href = '/'; }}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20 transition-all"
           >
@@ -368,49 +394,69 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <ErrorBoundary>
-      <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}>
+      <AuthContext.Provider
+        value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}
+      >
         {children}
       </AuthContext.Provider>
     </ErrorBoundary>
   );
 }
 
-import NotificationsDropdown from './components/NotificationsDropdown';
+// ─── ProtectedRoute ───────────────────────────────────────────────────────────
+function ProtectedRoute({ children, adminOnly = false }: { children: ReactNode; adminOnly?: boolean }) {
+  const { user, profile, loading, isAdmin } = useAuth();
 
+  // Wait until auth resolves AND profile is loaded for authenticated users.
+  // The key fix: `(user && !profile)` catches the race where loading=false
+  // but profile hasn't been set yet after a fresh Google sign-in.
+  if (loading || (user && !profile)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user)               return <Navigate to="/login" replace />;
+  if (adminOnly && !isAdmin) return <Navigate to="/dashboard" replace />;
+
+  return <>{children}</>;
+}
+
+// ─── Navbar ───────────────────────────────────────────────────────────────────
 function Navbar() {
   const { user, profile, logout, isAdmin } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+
   const [isDark, setIsDark] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark' || 
-        (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }
-    return false;
+    if (typeof window === 'undefined') return false;
+    return (
+      localStorage.getItem('theme') === 'dark' ||
+      (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    );
   });
 
   useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
+    document.documentElement.classList.toggle('dark', isDark);
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
   }, [isDark]);
 
   const isActive = (path: string) => location.pathname === path;
-  const linkClass = (path: string) => cn(
-    "px-4 py-2 rounded-xl text-sm font-bold transition-all",
-    isActive(path) 
-      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20" 
-      : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600"
-  );
+  const linkClass = (path: string) =>
+    cn(
+      'px-4 py-2 rounded-xl text-sm font-bold transition-all',
+      isActive(path)
+        ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20'
+        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600'
+    );
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
+          {/* Left nav links */}
           <div className="hidden md:flex items-center gap-2">
             <Link to="/" className={linkClass('/')}>Home</Link>
             {user ? (
@@ -420,36 +466,56 @@ function Navbar() {
               </>
             ) : (
               <div className="flex items-center gap-4">
-                <Link to="/login" className="text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors">Login</Link>
-                <Link to="/register" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-black text-sm shadow-xl shadow-blue-500/25 transition-all hover:-translate-y-0.5 active:scale-95">Start Now</Link>
+                <Link to="/login" className="text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors">
+                  Login
+                </Link>
+                <Link
+                  to="/register"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-black text-sm shadow-xl shadow-blue-500/25 transition-all hover:-translate-y-0.5 active:scale-95"
+                >
+                  Start Now
+                </Link>
               </div>
             )}
           </div>
 
+          {/* Right controls */}
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsDark(!isDark)} className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors">
+            <button
+              onClick={() => setIsDark(d => !d)}
+              className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors"
+            >
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
+
             {user && <NotificationsDropdown />}
+
             {user && (
               <div className="hidden md:flex items-center gap-3 pl-2 border-l border-slate-100 dark:border-slate-800">
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900 dark:text-white leading-none">{profile?.displayName}</p>
                   <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">{profile?.points} Points</p>
                 </div>
-                <button onClick={logout} className="p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl transition-colors">
+                <button
+                  onClick={logout}
+                  className="p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl transition-colors"
+                >
                   <LogOut size={20} />
                 </button>
               </div>
             )}
+
+            {/* Logo */}
             <Link to="/" className="flex items-center gap-3 group">
               <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white hidden xs:block">Medkit</span>
               <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-105 transition-all duration-300">
                 <ShieldCheck size={24} />
               </div>
             </Link>
+
+            {/* Mobile hamburger */}
             <div className="md:hidden flex items-center">
-              <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-slate-600 dark:text-slate-300">
+              <button onClick={() => setIsOpen(o => !o)} className="p-2 text-slate-600 dark:text-slate-300">
                 {isOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
@@ -457,21 +523,38 @@ function Navbar() {
         </div>
       </div>
 
-      <div className={cn(
-        "md:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 overflow-hidden transition-all duration-300 ease-in-out",
-        isOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0 border-transparent"
-      )}>
+      {/* Mobile menu */}
+      <div
+        className={cn(
+          'md:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 overflow-hidden transition-all duration-300 ease-in-out',
+          isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0 border-transparent'
+        )}
+      >
         <div className="px-4 pt-2 pb-6 space-y-2">
-          <Link to="/" onClick={() => setIsOpen(false)} className={cn("block px-3 py-2 rounded-lg transition-colors", isActive('/') ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold" : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800")}>Home</Link>
+          <Link
+            to="/" onClick={() => setIsOpen(false)}
+            className={cn('block px-3 py-2 rounded-lg transition-colors', isActive('/') ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800')}
+          >Home</Link>
           {user ? (
             <>
-              <Link to="/dashboard" onClick={() => setIsOpen(false)} className={cn("block px-3 py-2 rounded-lg transition-colors", isActive('/dashboard') ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold" : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800")}>Dashboard</Link>
-              {isAdmin && <Link to="/admin" onClick={() => setIsOpen(false)} className={cn("block px-3 py-2 rounded-lg transition-colors", isActive('/admin') ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold" : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800")}>Admin Panel</Link>}
-              <button onClick={() => { logout(); setIsOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">Logout</button>
+              <Link
+                to="/dashboard" onClick={() => setIsOpen(false)}
+                className={cn('block px-3 py-2 rounded-lg transition-colors', isActive('/dashboard') ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800')}
+              >Dashboard</Link>
+              {isAdmin && (
+                <Link
+                  to="/admin" onClick={() => setIsOpen(false)}
+                  className={cn('block px-3 py-2 rounded-lg transition-colors', isActive('/admin') ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800')}
+                >Admin Panel</Link>
+              )}
+              <button
+                onClick={() => { logout(); setIsOpen(false); }}
+                className="w-full text-left px-3 py-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >Logout</button>
             </>
           ) : (
             <>
-              <Link to="/login" onClick={() => setIsOpen(false)} className="block px-3 py-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">Login</Link>
+              <Link to="/login"    onClick={() => setIsOpen(false)} className="block px-3 py-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">Login</Link>
               <Link to="/register" onClick={() => setIsOpen(false)} className="block px-3 py-2 rounded-lg bg-blue-600 text-white text-center font-medium">Register</Link>
             </>
           )}
@@ -481,6 +564,7 @@ function Navbar() {
   );
 }
 
+// ─── Footer ───────────────────────────────────────────────────────────────────
 function Footer() {
   return (
     <footer className="bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 py-20">
@@ -494,16 +578,17 @@ function Footer() {
               <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Medkit</span>
             </div>
             <p className="text-slate-500 dark:text-slate-400 text-base leading-relaxed max-w-md">
-              A specialized medical team from the Faculty of Medicine, Minia University. We aim to provide the best educational experience for medical students.
+              A specialized medical team from the Faculty of Medicine, Minia University.
+              We aim to provide the best educational experience for medical students.
             </p>
           </div>
           <div>
             <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest mb-6">Quick Links</h3>
             <ul className="space-y-4 text-sm font-bold text-slate-500 dark:text-slate-400">
-              <li><Link to="/" className="hover:text-blue-600 transition-colors">Home</Link></li>
+              <li><Link to="/"          className="hover:text-blue-600 transition-colors">Home</Link></li>
               <li><Link to="/dashboard" className="hover:text-blue-600 transition-colors">Dashboard</Link></li>
-              <li><Link to="/login" className="hover:text-blue-600 transition-colors">Login</Link></li>
-              <li><Link to="/register" className="hover:text-blue-600 transition-colors">Register</Link></li>
+              <li><Link to="/login"     className="hover:text-blue-600 transition-colors">Login</Link></li>
+              <li><Link to="/register"  className="hover:text-blue-600 transition-colors">Register</Link></li>
             </ul>
           </div>
           <div>
@@ -527,31 +612,16 @@ function Footer() {
   );
 }
 
-function ProtectedRoute({ children, adminOnly = false }: { children: ReactNode, adminOnly?: boolean }) {
-  const { user, loading, isAdmin } = useAuth();
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900">
-      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-    </div>
-  );
-
-  if (!user) return <Navigate to="/login" />;
-  if (adminOnly && !isAdmin) return <Navigate to="/dashboard" />;
-
-  return <>{children}</>;
-}
-
-import DashboardLayout from './components/DashboardLayout';
-
+// ─── AppContent ───────────────────────────────────────────────────────────────
 function AppContent() {
   const location = useLocation();
-  const isDashboardRoute = location.pathname.startsWith('/dashboard') || 
-                          location.pathname.startsWith('/subjects') || 
-                          location.pathname.startsWith('/quizzes') || 
-                          location.pathname.startsWith('/progress') || 
-                          location.pathname.startsWith('/profile') ||
-                          location.pathname.startsWith('/admin');
+  const isDashboardRoute =
+    location.pathname.startsWith('/dashboard') ||
+    location.pathname.startsWith('/subjects')  ||
+    location.pathname.startsWith('/quizzes')   ||
+    location.pathname.startsWith('/progress')  ||
+    location.pathname.startsWith('/profile')   ||
+    location.pathname.startsWith('/admin');
 
   if (isDashboardRoute) {
     return (
@@ -560,11 +630,11 @@ function AppContent() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/subjects" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/quizzes" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/progress" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
+              <Route path="/subjects"  element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/quizzes"   element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/progress"  element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/profile"   element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/admin"     element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
             </Routes>
           </Suspense>
         </DashboardLayout>
@@ -578,11 +648,11 @@ function AppContent() {
       <main className="pt-16 min-h-[calc(100vh-300px)]">
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/quiz/:subjectId" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
-            <Route path="/result/:resultId" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
+            <Route path="/"                   element={<HomePage />} />
+            <Route path="/login"              element={<LoginPage />} />
+            <Route path="/register"           element={<RegisterPage />} />
+            <Route path="/quiz/:subjectId"    element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
+            <Route path="/result/:resultId"   element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
           </Routes>
         </Suspense>
       </main>
@@ -591,6 +661,7 @@ function AppContent() {
   );
 }
 
+// ─── App (root) ───────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <AuthProvider>
