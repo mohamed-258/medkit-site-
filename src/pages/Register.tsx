@@ -26,13 +26,11 @@ export default function Register() {
       navigate('/dashboard');
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        setError('تم إغلاق نافذة التسجيل قبل الاكتمال. يرجى المحاولة مرة أخرى.');
+        setError('Registration window was closed before completion. Please try again.');
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته في إعدادات Firebase.');
-      } else if (err.code === 'auth/account-exists-with-different-credential') {
-        setError('يوجد حساب مسجل بالفعل بهذا البريد الإلكتروني.');
+        setError('This domain is not authorized for Firebase Authentication. Please add your Netlify domain in the Firebase Console.');
       } else {
-        setError('حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.');
+        setError(err.message || 'An error occurred during registration. Please try again.');
         console.error(err);
       }
     } finally {
@@ -43,11 +41,11 @@ export default function Register() {
   const handleEmailRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.firstName || !formData.fatherName || !formData.dateOfBirth || !formData.email || !formData.password) {
-      setError('يرجى ملء جميع الحقول.');
+      setError('Please fill in all fields.');
       return;
     }
     if (formData.password.length < 6) {
-      setError('يجب أن تتكون كلمة المرور من 6 أحرف على الأقل.');
+      setError('Password must be at least 6 characters long.');
       return;
     }
 

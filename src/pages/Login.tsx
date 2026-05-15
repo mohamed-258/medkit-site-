@@ -19,13 +19,11 @@ export default function Login() {
       navigate('/dashboard');
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        setError('تم إغلاق نافذة تسجيل الدخول قبل الاكتمال. يرجى المحاولة مرة أخرى.');
+        setError('Login window was closed before completion. Please try again.');
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته في إعدادات Firebase.');
-      } else if (err.code === 'auth/account-exists-with-different-credential') {
-        setError('يوجد حساب مسجل بالفعل بهذا البريد الإلكتروني عبر طريقة تسجيل دخول مختلفة.');
+        setError('This domain is not authorized for Firebase Authentication. Please add your Netlify domain in the Firebase Console.');
       } else {
-        setError('حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.');
+        setError(err.message || 'An error occurred during login. Please try again.');
         console.error(err);
       }
     } finally {
@@ -36,7 +34,7 @@ export default function Login() {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError('يرجى إدخال البريد الإلكتروني وكلمة المرور.');
+      setError('Please enter both email and password.');
       return;
     }
 
@@ -48,14 +46,12 @@ export default function Login() {
     } catch (err: any) {
       if (err.message === 'email-not-verified') {
         setError('يرجى التحقق من بريدك الإلكتروني لتفعيل الحساب قبل تسجيل الدخول.');
-      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError('البريد الإلكتروني أو كلمة المرور غير صحيحة.');
+      } else if (err.code === 'auth/invalid-credential') {
+        setError('Invalid email or password.');
       } else if (err.code === 'auth/operation-not-allowed') {
-        setError('تسجيل الدخول بالبريد الإلكتروني غير مفعل في Firebase.');
-      } else if (err.code === 'auth/too-many-requests') {
-        setError('تم حظر الوصول مؤقتاً بسبب محاولات فاشلة كثيرة. يرجى المحاولة لاحقاً.');
+        setError('Email/Password authentication is not enabled. Please enable it in your Firebase Console.');
       } else {
-        setError(err.message || 'حدث خطأ أثناء تسجيل الدخول.');
+        setError(err.message || 'An error occurred during login.');
       }
       console.error(err);
     } finally {

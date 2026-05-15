@@ -125,43 +125,14 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   const getDeviceId = () => {
     try {
-      const nav = window.navigator as any;
-      const screen = window.screen;
-      
-      const osMatch = nav.userAgent?.match(/(Windows|Macintosh|Linux|iPhone|iPad|iPod|Android)/i) || ['UnknownOS'];
-
-      const fingerprintStr = [
-        osMatch[0],
-        screen.width,
-        screen.height,
-        screen.colorDepth,
-        new Date().getTimezoneOffset()
-      ].join('||');
-      
-      let hash = 0;
-      for (let i = 0; i < fingerprintStr.length; i++) {
-          const char = fingerprintStr.charCodeAt(i);
-          hash = ((hash << 5) - hash) + char;
-          hash = hash & hash;
-      }
-      const stableFingerprint = "fp_v2_" + Math.abs(hash).toString(16);
-
       let deviceId = localStorage.getItem('device_id');
-      
-      // If no device_id in localStorage, use the stable fingerprint
       if (!deviceId) {
-        deviceId = stableFingerprint;
-        localStorage.setItem('device_id', deviceId);
-      } else if (deviceId.startsWith('fp_') && !deviceId.startsWith('fp_v2_')) {
-        // Upgrade to v2 fingerprint to support multiple browsers on same device
-        deviceId = stableFingerprint;
+        deviceId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         localStorage.setItem('device_id', deviceId);
       }
-      
-      // We return the local storage ID, but if it was cleared, it regenerates the identical fingerprint
       return deviceId;
     } catch (e) {
-      console.warn("LocalStorage is not accessible. Using random fallback.");
+      console.warn("LocalStorage is not accessible. Device registration may be unreliable.");
       return "temp_device_" + Math.random().toString(36).substring(2, 7);
     }
   };
@@ -303,18 +274,12 @@ function AuthProvider({ children }: { children: ReactNode }) {
     testConnection();
 
     // Check for redirect errors
-    getRedirectResult(auth).then((result) => {
-      if (result) {
-         setAuthError(null);
-      }
-    }).catch((err) => {
+    getRedirectResult(auth).catch((err) => {
       console.error("Redirect login error:", err);
       if (err.code === 'auth/unauthorized-domain') {
-         setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته في إعدادات Firebase.');
-      } else if (err.code === 'auth/account-exists-with-different-credential') {
-         setAuthError('يوجد حساب مسجل بالفعل بهذا البريد الإلكتروني عبر طريقة تسجيل دخول مختلفة.');
-      } else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
-         setAuthError('حدث خطأ أثناء إكمال تسجيل الدخول عبر Google. حاول مرة أخرى.');
+         setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته.');
+      } else {
+         setAuthError('حدث خطأ أثناء تسجيل الدخول عبر Google. حاول مرة أخرى.');
       }
     });
 
@@ -352,6 +317,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setProfile(null);
         setLoading(false);
+        setAuthError(null);
         cleanupSubscription();
       }
     });
@@ -371,17 +337,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
          // Mobile standalone (not in AI Studio iframe) prefers redirect to avoid popup blockers
          await signInWithRedirect(auth, googleProvider);
       } else {
-         try {
-           // Desktop or iframe prefers popup
-           await signInWithPopup(auth, googleProvider);
-         } catch(err: any) {
-           if ((err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') && !isIframe) {
-             console.warn("Popup blocked, falling back to redirect...");
-             await signInWithRedirect(auth, googleProvider);
-           } else {
-             throw err;
-           }
-         }
+         // Desktop or iframe prefers popup
+         await signInWithPopup(auth, googleProvider);
       }
     } catch (err) {
       console.error("Google login error:", err);
