@@ -4,7 +4,7 @@ import { useAuth } from '../App';
 import { LogIn, Mail, Lock, ShieldCheck, ArrowLeft, Chrome } from 'lucide-react';
 
 export default function Login() {
-  const { user, profile, loginWithGoogle, loginWithEmail } = useAuth();
+  const { user, profile, signInWithGoogle, loginWithEmail } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -21,7 +21,7 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      await loginWithGoogle();
+      await signInWithGoogle();
       navigate('/dashboard');
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {

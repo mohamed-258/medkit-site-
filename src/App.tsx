@@ -5,7 +5,6 @@ import { auth, googleProvider } from './firebase';
 import { signInWithPopup, signInWithRedirect, getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { handleSupabaseError, OperationType } from './lib/supabase-errors';
 
-// Error Boundary Component
 import React, { Component, ErrorInfo } from 'react';
 
 interface ErrorBoundaryProps {
@@ -40,7 +39,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           displayMessage = `Database Error (${parsed.operationType}): ${parsed.error}`;
         }
       } catch (e) {
-        // Not a JSON error
         if (this.state.error?.message.includes('auth/network-request-failed')) {
           displayMessage = "Network error: Unable to reach authentication servers. Please check your internet connection or try again later.";
         }
@@ -70,24 +68,22 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return this.props.children;
   }
 }
+
 import { UserProfile, Notification } from './types';
 import { LogOut, LayoutDashboard, BookOpen, Trophy, Settings, Menu, X, Moon, Sun, Home as HomeIcon, LogIn, UserPlus, ShieldCheck, Bell } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Auth Context
 interface AuthContextType {
   user: any | null;
   profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
-  loginWithGoogle: () => Promise<void>;
-  registerWithGoogle: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => Promise<void>;
   logout: () => Promise<void>;
@@ -102,7 +98,6 @@ export function useAuth() {
   return context;
 }
 
-// Components
 const HomePage = lazy(() => import('./pages/Home'));
 const LoginPage = lazy(() => import('./pages/Login'));
 const RegisterPage = lazy(() => import('./pages/Register'));
@@ -111,7 +106,6 @@ const QuizPage = lazy(() => import('./pages/Quiz'));
 const ResultPage = lazy(() => import('./pages/Result'));
 const AdminPage = lazy(() => import('./pages/Admin'));
 
-// Loading Fallback
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
     <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
@@ -167,9 +161,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        // If it's a network error and we already have a profile, don't block the app
         if (error.message.includes('Failed to fetch') && profileRef.current) {
-          console.warn("Network error while refreshing profile, keeping current profile.");
+          console.warn("Network error, keeping current profile.");
           return;
         }
         throw error;
@@ -177,50 +170,33 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data) {
         let mappedData = mapUserToProfile(data);
-
-        // Auto-upgrade owner by email
         if (sessionUser.email === 'mhsn68503@gmail.com' && mappedData.role !== 'owner') {
           await supabase.from('users').update({ role: 'owner' }).eq('uid', sessionUser.uid);
           mappedData.role = 'owner';
         }
-
         setAuthError(null);
         setProfile(mappedData);
       } else {
-        const action = localStorage.getItem('auth_action');
-        if (action === 'register' || sessionUser.email === 'mhsn68503@gmail.com') {
-          // Create new profile if not exists
-          const newProfile = {
-            uid: sessionUser.uid,
-            email: sessionUser.email || '',
-            display_name: sessionUser.displayName || 'User',
-            role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
-            points: 0,
-            completed_quizzes: 0,
-            created_at: new Date().toISOString(),
-          };
-          
-          const { error: insertError } = await supabase.from('users').insert([newProfile]);
-          if (insertError) {
-             console.error("Error creating profile:", insertError);
-          }
+        const newProfile = {
+          uid: sessionUser.uid,
+          email: sessionUser.email || '',
+          display_name: sessionUser.displayName || 'User',
+          role: sessionUser.email === 'mhsn68503@gmail.com' ? 'owner' : 'student',
+          points: 0,
+          completed_quizzes: 0,
+          created_at: new Date().toISOString(),
+        };
+        const { error: upsertError } = await supabase
+          .from('users')
+          .upsert(newProfile, { onConflict: 'email' });
+        if (!upsertError) {
           setProfile(mapUserToProfile(newProfile));
-          setAuthError(null);
-        } else {
-          // If login, and no profile exists, fail.
-          setAuthError("لا يوجد حساب مسجل بهذا البريد الإلكتروني. يرجى إنشاء حساب جديد.");
-          await signOut(auth);
-          setProfile(null);
-          setUser(null);
         }
       }
-
     } catch (err: any) {
       console.error("Error fetching profile:", err);
-      if (err.message?.includes('Failed to fetch') && profileRef.current) {
-         return; 
-      }
-      setAuthError(err.message || "حدث خطأ أثناء جلب بيانات المستخدم. يرجى المحاولة لاحقاً.");
+      if (profileRef.current) return;
+      setAuthError(err.message || "حدث خطأ أثناء جلب بيانات المستخدم.");
     } finally {
       setLoading(false);
     }
@@ -243,17 +219,15 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     testConnection();
 
-    // Check for redirect errors
     getRedirectResult(auth).catch((err) => {
       console.error("Redirect login error:", err);
       if (err.code === 'auth/unauthorized-domain') {
-         setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته.');
+        setAuthError('هذا النطاق غير مصرح به في Firebase. يرجى إضافته.');
       } else {
-         setAuthError('حدث خطأ أثناء تسجيل الدخول عبر Google. حاول مرة أخرى.');
+        setAuthError('حدث خطأ أثناء تسجيل الدخول عبر Google. حاول مرة أخرى.');
       }
     });
 
-    // Cleanup function for subscription
     const cleanupSubscription = () => {
       if (profileSubscription) {
         supabase.removeChannel(profileSubscription);
@@ -262,25 +236,29 @@ function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const unsubscribe = onAuthStateChanged(auth, (sessionUser) => {
-      console.log("Auth State Transition:", sessionUser ? "User Logged In" : "User Logged Out");
+      console.log("Auth State:", sessionUser ? "logged in" : "logged out");
       if (sessionUser) {
         const isSameUser = userRef.current?.uid === sessionUser.uid;
         const hasProfile = !!profileRef.current;
-        
+
         if (!isSameUser || !hasProfile) {
           setUser(sessionUser);
           fetchProfile(sessionUser);
         } else {
           setUser(sessionUser);
+          setLoading(false);
         }
 
-        // Setup/Refresh realtime subscription
         cleanupSubscription();
-        profileSubscription = supabase.channel(`public:users:uid=eq.${sessionUser.uid}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `uid=eq.${sessionUser.uid}` }, payload => {
-            if (payload.new) {
-              setProfile(mapUserToProfile(payload.new));
-            }
+        profileSubscription = supabase
+          .channel(`public:users:uid=eq.${sessionUser.uid}`)
+          .on('postgres_changes', { 
+            event: '*', 
+            schema: 'public', 
+            table: 'users', 
+            filter: `uid=eq.${sessionUser.uid}` 
+          }, payload => {
+            if (payload.new) setProfile(mapUserToProfile(payload.new));
           })
           .subscribe();
       } else {
@@ -298,18 +276,14 @@ function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const loginWithGoogle = async () => {
-    localStorage.setItem('auth_action', 'login');
+  const signInWithGoogle = async () => {
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       const isIframe = window !== window.parent;
-      
       if (isMobile && !isIframe) {
-         // Mobile standalone (not in AI Studio iframe) prefers redirect to avoid popup blockers
-         await signInWithRedirect(auth, googleProvider);
+        await signInWithRedirect(auth, googleProvider);
       } else {
-         // Desktop or iframe prefers popup
-         await signInWithPopup(auth, googleProvider);
+        await signInWithPopup(auth, googleProvider);
       }
     } catch (err) {
       console.error("Google login error:", err);
@@ -317,28 +291,14 @@ function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const registerWithGoogle = async () => {
-    localStorage.setItem('auth_action', 'register');
-    try {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const isIframe = window !== window.parent;
-      
-      if (isMobile && !isIframe) {
-         // Mobile standalone prefers redirect to avoid popup blockers
-         await signInWithRedirect(auth, googleProvider);
-      } else {
-         // Desktop or iframe prefers popup
-         await signInWithPopup(auth, googleProvider);
-      }
-    } catch (err) {
-      console.error("Google register error:", err);
-      throw err;
-    }
-  };
-
   const loginWithEmail = async (email: string, pass: string) => {
     try {
-      await signInWithEmailAndPassword(auth, email, pass);
+      const result = await signInWithEmailAndPassword(auth, email, pass);
+      if (!result.user.emailVerified) {
+        await signOut(auth);
+        const error: any = new Error('email-not-verified');
+        throw error;
+      }
     } catch (err) {
       console.error("Email login error:", err);
       throw err;
@@ -348,7 +308,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const registerWithEmail = async (email: string, pass: string, data: { firstName: string, fatherName: string, dateOfBirth: string }) => {
     try {
       const { user: authUser } = await createUserWithEmailAndPassword(auth, email, pass);
-      
       if (authUser) {
         const newProfile = {
           uid: authUser.uid,
@@ -361,13 +320,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
           points: 0,
           completed_quizzes: 0,
         };
-        const { error: insertError } = await supabase.from('users').insert([newProfile]);
-        if (insertError) {
-          console.error("Supabase insert error:", insertError);
-          throw new Error("Failed to save user profile.");
-        }
+        await supabase.from('users').upsert(newProfile, { onConflict: 'email' });
       }
-      await signOut(auth);
+      await signOut(auth); 
     } catch (err) {
       console.error("Registration error:", err);
       throw err;
@@ -378,9 +333,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       try {
         const { data, error } = await supabase.from('users').select('*').eq('uid', user.uid).single();
-        if (data && !error) {
-           setProfile(mapUserToProfile(data));
-        }
+        if (data && !error) setProfile(mapUserToProfile(data));
       } catch (err) {
         console.error("Error reloading profile:", err);
       }
@@ -401,14 +354,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
             <ShieldCheck size={32} />
           </div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4">تم رفض الوصول</h2>
-          <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">
-            {authError}
-          </p>
+          <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">{authError}</p>
           <button 
-            onClick={() => {
-              setAuthError(null);
-              window.location.href = '/';
-            }}
+            onClick={() => { setAuthError(null); window.location.href = '/'; }}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20 transition-all"
           >
             العودة للصفحة الرئيسية
@@ -420,7 +368,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <ErrorBoundary>
-      <AuthContext.Provider value={{ user, profile, loading, isAdmin, loginWithGoogle, registerWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}>
+      <AuthContext.Provider value={{ user, profile, loading, isAdmin, signInWithGoogle, loginWithEmail, registerWithEmail, logout, reloadProfile }}>
         {children}
       </AuthContext.Provider>
     </ErrorBoundary>
@@ -463,15 +411,12 @@ function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
-          {/* Desktop Menu - Left Side */}
           <div className="hidden md:flex items-center gap-2">
             <Link to="/" className={linkClass('/')}>Home</Link>
             {user ? (
               <>
                 <Link to="/dashboard" className={linkClass('/dashboard')}>Dashboard</Link>
-                {isAdmin && (
-                  <Link to="/admin" className={linkClass('/admin')}>Admin Panel</Link>
-                )}
+                {isAdmin && <Link to="/admin" className={linkClass('/admin')}>Admin Panel</Link>}
               </>
             ) : (
               <div className="flex items-center gap-4">
@@ -481,16 +426,11 @@ function Navbar() {
             )}
           </div>
 
-          {/* Right Side - Logo and Theme Toggle */}
           <div className="flex items-center gap-4">
             <button onClick={() => setIsDark(!isDark)} className="p-2.5 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors">
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-
-            {user && (
-              <NotificationsDropdown />
-            )}
-
+            {user && <NotificationsDropdown />}
             {user && (
               <div className="hidden md:flex items-center gap-3 pl-2 border-l border-slate-100 dark:border-slate-800">
                 <div className="text-right">
@@ -502,17 +442,12 @@ function Navbar() {
                 </button>
               </div>
             )}
-
             <Link to="/" className="flex items-center gap-3 group">
-              <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white hidden xs:block">
-                Medkit
-              </span>
+              <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white hidden xs:block">Medkit</span>
               <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-105 transition-all duration-300">
                 <ShieldCheck size={24} />
               </div>
             </Link>
-
-            {/* Mobile menu button */}
             <div className="md:hidden flex items-center">
               <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-slate-600 dark:text-slate-300">
                 {isOpen ? <X size={24} /> : <Menu size={24} />}
@@ -522,21 +457,16 @@ function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Menu */}
-      <div 
-        className={cn(
-          "md:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 overflow-hidden transition-all duration-300 ease-in-out",
-          isOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0 border-transparent"
-        )}
-      >
+      <div className={cn(
+        "md:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 overflow-hidden transition-all duration-300 ease-in-out",
+        isOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0 border-transparent"
+      )}>
         <div className="px-4 pt-2 pb-6 space-y-2">
           <Link to="/" onClick={() => setIsOpen(false)} className={cn("block px-3 py-2 rounded-lg transition-colors", isActive('/') ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold" : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800")}>Home</Link>
           {user ? (
             <>
               <Link to="/dashboard" onClick={() => setIsOpen(false)} className={cn("block px-3 py-2 rounded-lg transition-colors", isActive('/dashboard') ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold" : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800")}>Dashboard</Link>
-              {isAdmin && (
-                <Link to="/admin" onClick={() => setIsOpen(false)} className={cn("block px-3 py-2 rounded-lg transition-colors", isActive('/admin') ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold" : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800")}>Admin Panel</Link>
-              )}
+              {isAdmin && <Link to="/admin" onClick={() => setIsOpen(false)} className={cn("block px-3 py-2 rounded-lg transition-colors", isActive('/admin') ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 font-bold" : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800")}>Admin Panel</Link>}
               <button onClick={() => { logout(); setIsOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">Logout</button>
             </>
           ) : (
@@ -564,7 +494,7 @@ function Footer() {
               <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Medkit</span>
             </div>
             <p className="text-slate-500 dark:text-slate-400 text-base leading-relaxed max-w-md">
-              A specialized medical team from the Faculty of Medicine, Minia University. We aim to provide the best educational experience for medical students by organizing and facilitating question solving and exams.
+              A specialized medical team from the Faculty of Medicine, Minia University. We aim to provide the best educational experience for medical students.
             </p>
           </div>
           <div>
@@ -598,7 +528,7 @@ function Footer() {
 }
 
 function ProtectedRoute({ children, adminOnly = false }: { children: ReactNode, adminOnly?: boolean }) {
-  const { user, profile, loading, isAdmin } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900">
@@ -629,54 +559,12 @@ function AppContent() {
         <DashboardLayout>
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              <Route 
-                path="/dashboard" 
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/subjects" 
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/quizzes" 
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/progress" 
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/profile" 
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/admin" 
-                element={
-                  <ProtectedRoute adminOnly>
-                    <AdminPage />
-                  </ProtectedRoute>
-                } 
-              />
+              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/subjects" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/quizzes" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/progress" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
             </Routes>
           </Suspense>
         </DashboardLayout>
@@ -693,22 +581,8 @@ function AppContent() {
             <Route path="/" element={<HomePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            <Route 
-              path="/quiz/:subjectId" 
-              element={
-                <ProtectedRoute>
-                  <QuizPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/result/:resultId" 
-              element={
-                <ProtectedRoute>
-                  <ResultPage />
-                </ProtectedRoute>
-              } 
-            />
+            <Route path="/quiz/:subjectId" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
+            <Route path="/result/:resultId" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
           </Routes>
         </Suspense>
       </main>
