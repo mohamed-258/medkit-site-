@@ -305,8 +305,14 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithGoogle = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Google sign-in error:', err);
+      // Try to re-throw with context if it's an internal error
+      if (err.code === 'auth/internal-error') {
+        const customErr = new Error('حدث خطأ داخلي (غالباً بسبب قيود المتصفح). يُرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab).');
+        (customErr as any).code = err.code;
+        throw customErr;
+      }
       throw err;
     }
   };

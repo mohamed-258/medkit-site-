@@ -36,6 +36,8 @@ export default function Register() {
         setError('تم إغلاق نافذة التسجيل قبل الاكتمال. إذا استمرت هذه المشكلة، يُرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab) أعلى يمين الشاشة والمحاولة مرة أخرى.');
       } else if (err.code === 'auth/unauthorized-domain') {
         setError('هذا النطاق غير مصرح له في Firebase. يرجى إضافته في إعدادات Firebase.');
+      } else if (err.code === 'auth/internal-error' || err.message?.includes('internal-error')) {
+        setError('حدث خطأ داخلي (غالباً بسبب قيود المتصفح). يُرجى النقر على أيقونة "فتح في علامة تبويب جديدة" (Open in new tab) أعلى يمين الشاشة ثم المحاولة.');
       } else {
         setError(err.message || 'حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.');
         console.error(err);
